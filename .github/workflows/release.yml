@@ -63,6 +63,11 @@ jobs:
 
       - name: Build Android APK via myphp
         working-directory: agc_linking
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASS }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASS: ${{ secrets.ANDROID_KEY_PASS }}
         run: |
           php -d ffi.enable=1 ../myphp/bin/myphp build -platform android/arm64 .
           cp build/Linking.apk "build/Linking_${{ steps.meta.outputs.version }}.apk"
