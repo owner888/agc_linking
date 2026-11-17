@@ -1,0 +1,94 @@
+name: Build & Release APK
+
+on:
+  push:
+    tags:
+      - '*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag (e.g. v2.0.0)'
+        required: false
+        default: 'v2.0.0'
+
+permissions:
+  contents: write
+
+jobs:
+  release-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      XDEBUG_MODE: "off"
+    steps:
+      - name: Checkout agc_linking
+        uses: actions/checkout@v4
+        with:
+          path: agc_linking
+          fetch-depth: 0
+
+      - name: Checkout myphp framework
+        uses: actions/checkout@v4
+        with:
+          repository: owner888/myphp
+          path: myphp
+
+      - name: Set up PHP 8.4 (with ext-ffi)
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: ffi, mbstring, curl, openssl, dom, xml, zip, phar
+          ini-values: ffi.enable=1
+          coverage: none
+
+      - name: Run Headless UI Tests
+        working-directory: agc_linking
+        run: php -d ffi.enable=1 tests/ui_test.php
+
+      - name: Sync version from tag into myphp.json
+        id: meta
+        working-directory: agc_linking
+        run: |
+          RAW_TAG="${{ inputs.tag || github.ref_name }}"
+          # Strip leading 'v' and optional suffixes like '_Android' / '_APK'
+          VERSION="$(echo "$RAW_TAG" | sed -E 's/^v//; s/_(Android|APK|Test|iOS|macOS)$//')"
+          php -r '
+            $f = "myphp.json";
+            $c = json_decode(file_get_contents($f), true);
+            $c["version"] = $argv[1];
+            file_put_contents($f, json_encode($c, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . "\n");
+          ' "$VERSION"
+          echo "tag=$RAW_TAG" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Build Android APK via myphp
+        working-directory: agc_linking
+        run: |
+          php -d ffi.enable=1 ../myphp/bin/myphp build -platform android/arm64 .
+          cp build/Linking.apk "build/Linking_${{ steps.meta.outputs.version }}.apk"
+          (cd build && sha256sum Linking.apk "Linking_${{ steps.meta.outputs.version }}.apk" > SHA256SUMS)
+          ls -lh build/
+
+      - name: Publish APK to GitHub Releases
+        working-directory: agc_linking
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${{ steps.meta.outputs.tag }}"
+          VERSION="${{ steps.meta.outputs.version }}"
+          NOTES="$(git tag -l --format='%(contents)' "$TAG" 2>/dev/null || true)"
+          if [ -z "$NOTES" ]; then
+            NOTES="$(git log -1 --no-merges --pretty=%B)"
+          fi
+
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" \
+              --title "Linking v${VERSION}" \
+              --notes "$NOTES"
+          fi
+
+          gh release upload "$TAG" \
+            build/Linking.apk \
+            "build/Linking_${VERSION}.apk" \
+            build/SHA256SUMS \
+            --clobber
