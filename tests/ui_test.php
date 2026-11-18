@@ -173,9 +173,15 @@ $h->frame();
 same('installing', $app->updateStatus, 'Tapping the capsule downloaded and entered installing state');
 check($h->byText('Update Now') !== null, 'Update Capsule displays Update Now');
 
-// Test dismissing / skipping update capsule
+// Test dismissing / skipping update capsule: a long press on it asks, as Telegram's
 $app->simulateUpdateAvailable();
-$h->frame();
+$h->frame(3);
+$capsule = $h->byLabel('Update ' . MyPHP\App::name()) ?? $h->byText('Update ' . MyPHP\App::name());
+check($capsule !== null, 'The capsule shows before it is skipped');
+// the long press itself is the phone's to try (the headless clock does not hold a press): what it sets, the dialog it opens
+$app->skipUpdateAsked = true; $settle();
+check($h->byText('Skip This Version') !== null, 'A long press on the capsule offers to skip the version');
+$app->skipUpdateAsked = false; $settle();
 $app->skipUpdate();
 $h->frame();
 same('idle', $app->updateStatus, 'Skipping the update hides the Update Capsule');

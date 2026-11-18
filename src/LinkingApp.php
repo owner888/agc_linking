@@ -37,6 +37,7 @@ final class LinkingApp
     public bool $favoritesOpen = false;
     public bool $engineAlertOpen = false;
     public bool $removeProfileAsked = false;
+    public bool $skipUpdateAsked = false;
 
     // Tool mode: 'Ping' | 'Httping' | 'Tcping'
     public string $toolType = 'Ping';
@@ -1193,6 +1194,7 @@ final class LinkingApp
         }
         $this->updateStatus = 'idle';
         $this->updateVersion = '';
+        $this->save();
     }
 
     // --- Settings Actions ---

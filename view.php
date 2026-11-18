@@ -468,13 +468,21 @@ return function () use ($networkPage, $pingPage, $configScreenPage, $logsScreenP
             tint: $accentBlue,
             size: $this->updateAssetSize,
             store: $this->updateStore(),
-        ) : null);
+        )
+            // A long press asks to skip this version, as Telegram's: not while it downloads or installs
+            ->onLongPressGesture(function (): void {
+                if (in_array($this->updateStatus, ['available', 'failed'], true)) { $this->skipUpdateAsked = true; }
+            }) : null);
 
     return $tabs
         ->sheet($this->addProfileOpen, content: $addProfileSheet)
         ->sheet($this->quickSettingsOpen, content: $quickSettingsSheet)
         ->sheet($this->favoritesOpen, content: $favoritesSheet)
         ->alert('Not available yet', $this->engineAlertOpen, [Button('OK')], 'The connection engine is not part of this build, so no connection is made.')
+        ->confirmationDialog('Skip version ' . $this->updateVersion . '?', $this->skipUpdateAsked, [
+            Button('Skip This Version', action: fn() => $this->skipUpdate()),
+            Button('Cancel', role: ButtonRole::cancel),
+        ])
         ->confirmationDialog('Remove this profile?', $this->removeProfileAsked, [
             Button('Remove', role: ButtonRole::destructive, action: fn() => $this->removeActiveProfile()),
             Button('Cancel', role: ButtonRole::cancel),
