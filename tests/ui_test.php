@@ -28,7 +28,7 @@ $settle = function () use ($h): void { $h->frame(3); usleep(450_000); $h->frame(
 $h->frame();
 
 // 1. Home is the connection, with nothing to connect to yet: no sample data of any kind
-check($h->byText('NetWork') !== null, 'Home title renders');
+check($h->byText('NetWork') === null, 'Home has no title over the connection');
 check($h->byText('Tap To Connect') !== null, 'Connection button says Tap To Connect');
 check($h->byText('Home') !== null && $h->byText('Proxies') !== null, 'Two tabs, Home and Proxies');
 same([], $app->profiles, 'No profile before one is added');

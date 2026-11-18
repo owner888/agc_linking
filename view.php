@@ -80,7 +80,7 @@ $networkScreen = fn() => VStack(spacing: 0)(
     Spacer(),
 );
 
-$networkPage = fn() => $bar($networkScreen(), 'NetWork', [
+$networkPage = fn() => $bar($networkScreen(), '', [
     $barButton('globe', fn() => Shell::openExternal('https://ipinfo.io/'), 'IP check'),
     $barButton('sliders', fn() => $this->quickSettingsOpen = true, 'Quick settings'),
     $barButton('plus', fn() => $this->openAddProfile(), 'Add profile'),
@@ -353,9 +353,8 @@ $addProfileSheet = fn() => NavigationStack()(
         ),
     )
         ->navigationTitle('Add Profile')
-        ->navigationBarTitleDisplayMode(TitleDisplayMode::inline)
-        ->toolbar(Button('Cancel', action: function () { $this->addProfileOpen = false; })),
-)->interactiveDismissDisabled(true)->presentationDetents([PresentationDetent::large()]);
+        ->navigationBarTitleDisplayMode(TitleDisplayMode::inline),
+)->presentationDetents([PresentationDetent::large()]); // a field in it: the keyboard takes the bottom, the sheet is high enough to keep it in view
 
 $quickSettingsSheet = fn() => NavigationStack()(
     ListView()(
@@ -370,8 +369,7 @@ $quickSettingsSheet = fn() => NavigationStack()(
         ),
     )
         ->navigationTitle('Quick Settings')
-        ->navigationBarTitleDisplayMode(TitleDisplayMode::inline)
-        ->toolbar(Button('Done', action: function () { $this->quickSettingsOpen = false; $this->save(); })),
+        ->navigationBarTitleDisplayMode(TitleDisplayMode::inline),
 )->presentationDetents([PresentationDetent::medium()]);
 
 $favoritesSheet = fn() => NavigationStack()(
@@ -424,8 +422,7 @@ $favoritesSheet = fn() => NavigationStack()(
             : null,
     )
         ->navigationTitle('Favorites')
-        ->navigationBarTitleDisplayMode(TitleDisplayMode::inline)
-        ->toolbar(Button('Done', action: function () { $this->favoritesOpen = false; })),
+        ->navigationBarTitleDisplayMode(TitleDisplayMode::inline),
 )->presentationDetents([PresentationDetent::large()]);
 
 // ---------------------------------------------------------------------------------------------------------------
