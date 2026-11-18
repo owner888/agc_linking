@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Release tag (e.g. v2.0.0)'
+        description: 'Release tag (e.g. v2.0.0+5 or v2.0.0_b5)'
         required: false
-        default: 'v2.0.0'
+        default: 'v2.0.0+5'
 
 permissions:
   contents: write
@@ -41,25 +41,35 @@ jobs:
           ini-values: ffi.enable=1
           coverage: none
 
-      - name: Run Headless UI Tests
-        working-directory: agc_linking
-        run: php -d ffi.enable=1 tests/ui_test.php
-
-      - name: Sync version from tag into myphp.json
+      - name: Sync version & build number from tag into myphp.json
         id: meta
         working-directory: agc_linking
         run: |
           RAW_TAG="${{ inputs.tag || github.ref_name }}"
-          # Strip leading 'v' and optional suffixes like '_Android' / '_APK'
-          VERSION="$(echo "$RAW_TAG" | sed -E 's/^v//; s/_(Android|APK|Test|iOS|macOS)$//')"
+          RUN_NUM="${{ github.run_number }}"
           php -r '
             $f = "myphp.json";
-            $c = json_decode(file_get_contents($f), true);
-            $c["version"] = $argv[1];
+            $c = json_decode(file_get_contents($f), true) ?: [];
+            $rawTag = $argv[1];
+            $runNum = (int)$argv[2];
+            $clean = preg_replace("/_(Android|APK|Test|iOS|macOS)$/i", "", ltrim($rawTag, "vV"));
+            if (preg_match("/^([0-9]+\.[0-9]+\.[0-9]+)(?:[+_b-]+([0-9]+))?$/i", $clean, $m)) {
+                $ver = $m[1];
+                $build = !empty($m[2]) ? (int)$m[2] : max((int)($c["buildNumber"] ?? 1), $runNum);
+            } else {
+                [$ver] = explode("+", (string)($c["version"] ?? "2.0.0"), 2);
+                $build = max((int)($c["buildNumber"] ?? 1), $runNum);
+            }
+            $c["version"] = "{$ver}+{$build}";
+            $c["buildNumber"] = $build;
             file_put_contents($f, json_encode($c, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) . "\n");
-          ' "$VERSION"
-          echo "tag=$RAW_TAG" >> "$GITHUB_OUTPUT"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+            $out = getenv("GITHUB_OUTPUT");
+            file_put_contents($out, "tag={$rawTag}\nversion={$ver}\nbuild={$build}\n", FILE_APPEND);
+          ' "$RAW_TAG" "$RUN_NUM"
+
+      - name: Run Headless UI Tests
+        working-directory: agc_linking
+        run: php -d ffi.enable=1 tests/ui_test.php
 
       - name: Build Android APK via myphp
         working-directory: agc_linking
@@ -70,8 +80,9 @@ jobs:
           ANDROID_KEY_PASS: ${{ secrets.ANDROID_KEY_PASS }}
         run: |
           php -d ffi.enable=1 ../myphp/bin/myphp build -platform android/arm64 .
-          cp build/Linking.apk "build/Linking_${{ steps.meta.outputs.version }}.apk"
-          (cd build && sha256sum Linking.apk "Linking_${{ steps.meta.outputs.version }}.apk" > SHA256SUMS)
+          APK_VERSIONED="Linking_${{ steps.meta.outputs.version }}_b${{ steps.meta.outputs.build }}.apk"
+          cp build/Linking.apk "build/${APK_VERSIONED}"
+          (cd build && sha256sum Linking.apk "${APK_VERSIONED}" > SHA256SUMS)
           ls -lh build/
 
       - name: Publish APK to GitHub Releases
@@ -81,6 +92,8 @@ jobs:
         run: |
           TAG="${{ steps.meta.outputs.tag }}"
           VERSION="${{ steps.meta.outputs.version }}"
+          BUILD="${{ steps.meta.outputs.build }}"
+          APK_VERSIONED="Linking_${VERSION}_b${BUILD}.apk"
           NOTES="$(git tag -l --format='%(contents)' "$TAG" 2>/dev/null || true)"
           if [ -z "$NOTES" ]; then
             NOTES="$(git log -1 --no-merges --pretty=%B)"
@@ -88,12 +101,12 @@ jobs:
 
           if ! gh release view "$TAG" >/dev/null 2>&1; then
             gh release create "$TAG" \
-              --title "Linking v${VERSION}" \
+              --title "Linking v${VERSION} (${BUILD})" \
               --notes "$NOTES"
           fi
 
           gh release upload "$TAG" \
             build/Linking.apk \
-            "build/Linking_${VERSION}.apk" \
+            "build/${APK_VERSIONED}" \
             build/SHA256SUMS \
             --clobber

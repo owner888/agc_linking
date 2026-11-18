@@ -250,7 +250,7 @@ $settingsView = fn() => ListView()(
         header: 'Version & Updates',
         footer: "Package: {$this->packageName} · Channel: " . strtoupper($this->distributionChannel())
     )(
-        LabeledContent('Version', 'v' . $this->currentVersion),
+        LabeledContent('Version', 'v' . $this->fullVersionText()),
         $this->isInAppUpdateAllowed()
             ? Button('Check for Updates', action: fn() => $this->checkUpdate(true))
             : Button('Rate on Google Play', action: fn() => $this->checkUpdate(true)),

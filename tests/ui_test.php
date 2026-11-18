@@ -79,7 +79,8 @@ same(64, $app->ttl, 'Reset to Default restored TTL to 64');
 
 $h->clickText('Check for Updates');
 $h->frame();
-same('available', $app->updateStatus, 'Check for Updates detected v2.1.0');
+same('available', $app->updateStatus, 'Check for Updates detected newer build');
+same('2.0.0 (6)', $app->updateVersion, 'TestFlight-style version+build detected as 2.0.0 (6)');
 check($h->byText('Update Available') !== null, 'Update Capsule banner is rendered');
 check($h->byText('UPDATE') !== null, 'UPDATE action pill is rendered');
 
@@ -94,7 +95,7 @@ $h->frame();
 $h->clickText('✕');
 $h->frame();
 same('idle', $app->updateStatus, 'Clicking dismiss ✕ hides the Update Capsule');
-same('2.1.0', $app->skippedVersion, 'Skipped version recorded as 2.1.0');
+same('2.0.0 (6)', $app->skippedVersion, 'Skipped version recorded as 2.0.0 (6)');
 
 // 7. Test iOS App Store channel: jumps to App Store instead of downloading APK
 Device::setChannel('appstore');

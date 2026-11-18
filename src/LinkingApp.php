@@ -7,8 +7,9 @@ final class LinkingApp
 {
     public ?Window $window = null;
 
-    // App version & Update Capsule state (matches agc_toolkit UpdateCapsuleWidget & AppUpdateService)
-    public string $currentVersion = '2.0.4';
+    // App version + TestFlight-style build number & Update Capsule state
+    public string $currentVersion = '2.0.0';
+    public int $currentBuild = 5;
     public string $packageName = 'easy.net.tool';
     public string $playStoreUrl = 'https://play.google.com/store/apps/details?id=easy.net.tool';
     public string $appStoreUrl = 'https://apps.apple.com/app/id6463097701';
@@ -132,7 +133,11 @@ final class LinkingApp
         if (is_file($cfgPath)) {
             $cfg = json_decode((string) file_get_contents($cfgPath), true);
             if (is_array($cfg) && !empty($cfg['version'])) {
-                $this->currentVersion = (string) $cfg['version'];
+                [$ver, $build] = self::parseVersionAndBuild((string) $cfg['version'], (int) ($cfg['buildNumber'] ?? 0));
+                $this->currentVersion = $ver;
+                if ($build > 0) {
+                    $this->currentBuild = $build;
+                }
             }
         }
         $this->pingPath = new \NavigationPath();
@@ -700,6 +705,31 @@ final class LinkingApp
         return !Device::isPlayStore();
     }
 
+    /** Parses "2.0.0+5", "v2.0.0_b5", or "Linking v2.0.0 (5)" into [version, build]. @return array{0: string, 1: int} */
+    public static function parseVersionAndBuild(string $raw, int $defaultBuild = 0, string $releaseTitle = ''): array
+    {
+        $clean = ltrim(trim($raw), 'vV');
+        $build = $defaultBuild;
+        if (preg_match('/^([0-9]+\.[0-9]+\.[0-9]+)(?:[+_b-]+([0-9]+))?/i', $clean, $m)) {
+            $ver = $m[1];
+            if (!empty($m[2])) {
+                $build = (int) $m[2];
+            }
+        } else {
+            $ver = explode('+', $clean, 2)[0];
+        }
+        if ($build <= 0 && $releaseTitle !== '' && preg_match('/\(([0-9]+)\)/', $releaseTitle, $tm)) {
+            $build = (int) $tm[1];
+        }
+        return [$ver, $build];
+    }
+
+    /** Formats version + build in TestFlight style, e.g. "2.0.0 (5)". */
+    public function fullVersionText(): string
+    {
+        return $this->currentBuild > 0 ? "{$this->currentVersion} ({$this->currentBuild})" : $this->currentVersion;
+    }
+
     public function updateActionButtonTitle(): string
     {
         return match ($this->distributionChannel()) {
@@ -731,8 +761,10 @@ final class LinkingApp
         }
 
         if ($this->deterministicProbes) {
+            $nextBuild = $this->currentBuild + 1;
             $this->applyReleasePayload([
-                'tag_name' => 'v2.1.0',
+                'tag_name' => "v{$this->currentVersion}+{$nextBuild}",
+                'name' => "Linking v{$this->currentVersion} ({$nextBuild})",
                 'body' => 'Native GPU UpdateCapsule & faster multi-DNS probing',
                 'assets' => [
                     [
@@ -771,13 +803,14 @@ final class LinkingApp
     private function applyReleasePayload(array $data, bool $manual): void
     {
         $tag = (string) ($data['tag_name'] ?? '');
-        $latest = ltrim($tag, 'vV');
-        if ($latest === '') {
+        $relName = (string) ($data['name'] ?? '');
+        [$latestVer, $latestBuild] = self::parseVersionAndBuild($tag, 0, $relName);
+        if ($latestVer === '') {
             $this->updateStatus = 'idle';
             return;
         }
         $body = trim((string) ($data['body'] ?? ''));
-        $firstLine = strtok($body, "\r\n") ?: 'New version available on GitHub Releases';
+        $firstLine = strtok($body, "\r\n") ?: 'New build available on GitHub Releases';
         $wantExt = $this->distributionChannel() === 'dmg' ? '.dmg' : '.apk';
         $downloadUrl = $wantExt === '.dmg'
             ? $this->githubReleaseUrl
@@ -792,21 +825,25 @@ final class LinkingApp
         }
         $this->updateAssetSize = $assetSize;
 
-        if (version_compare($latest, $this->currentVersion, '>')) {
-            if (!$manual && $this->skippedVersion === $latest) {
+        $displayVer = $latestBuild > 0 ? "{$latestVer} ({$latestBuild})" : $latestVer;
+        $verCmp = version_compare($latestVer, $this->currentVersion);
+        $isNewer = $verCmp > 0 || ($verCmp === 0 && $latestBuild > $this->currentBuild);
+
+        if ($isNewer) {
+            if (!$manual && $this->skippedVersion === $displayVer) {
                 $this->updateStatus = 'idle';
                 return;
             }
-            $this->updateVersion = $latest;
+            $this->updateVersion = $displayVer;
             $this->updateNotes = $firstLine;
             $this->updateDownloadUrl = $downloadUrl;
             $this->updateProgress = 0.0;
             $this->updateStatus = 'available';
-            $this->appendLog('INFO', "New version available: v{$latest} ({$firstLine})");
+            $this->appendLog('INFO', "New build available: v{$displayVer} ({$firstLine})");
         } else {
             $this->updateStatus = 'idle';
             if ($manual) {
-                $this->appendLog('INFO', "Already up to date (v{$this->currentVersion})");
+                $this->appendLog('INFO', "Already up to date (v{$this->fullVersionText()})");
             }
         }
     }
@@ -817,12 +854,13 @@ final class LinkingApp
             $this->appendLog('INFO', 'Play Store build: in-app update capsule is disabled per Google Play policy');
             return;
         }
-        $this->updateVersion = '2.1.0';
+        $nextBuild = $this->currentBuild + 1;
+        $this->updateVersion = "{$this->currentVersion} ({$nextBuild})";
         $this->updateNotes = 'Telegram-style Update Capsule & instant APK self-upgrade';
         $this->updateDownloadUrl = 'https://github.com/owner888/agc_linking/releases/latest/download/Linking.apk';
         $this->updateProgress = 0.0;
         $this->updateStatus = 'available';
-        $this->appendLog('INFO', 'Update capsule activated: v2.1.0 ready to install');
+        $this->appendLog('INFO', "Update capsule activated: v{$this->updateVersion} ready to install");
     }
 
     private function openExternalUrl(string $url, string $logMessage): void
