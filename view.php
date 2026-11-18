@@ -272,13 +272,14 @@ return function () use ($pingView, $networkView, $favoritesView, $settingsView, 
     )
         ->tabViewStyle(TabViewStyle::sidebarAdaptable)
         ->tint($accentBlue);
-    // The update bar under the tabs, which it pushes up, as Telegram's
-    return $updateShown() ? $tabs->safeAreaInset(Edge::bottom, content: fn() => UpdateCapsule(
+    // A small capsule floating over the page just above the tab bar, as Telegram's
+    return $tabs->bottomAccessory(fn() => $updateShown() ? UpdateCapsule(
         version: $this->updateVersion,
         status: $this->updateStatus,
         progress: $this->updateProgress,
         onAction: fn() => $this->performUpdate(),
         tint: $accentBlue,
-        actionTitle: $this->updateActionButtonTitle(),
-    )) : $tabs;
+        size: $this->updateAssetSize,
+        store: $this->updateStore(),
+    ) : null);
 };

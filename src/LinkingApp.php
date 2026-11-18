@@ -730,13 +730,11 @@ final class LinkingApp
         return $this->currentBuild > 0 ? "{$this->currentVersion} ({$this->currentBuild})" : $this->currentVersion;
     }
 
-    public function updateActionButtonTitle(): string
+    /** The store an update goes through, for the capsule's words: 'appstore', 'play', or null for the app's own download. */
+    public function updateStore(): ?string
     {
-        return match ($this->distributionChannel()) {
-            'appstore' => 'Update on the App Store',
-            'play' => 'Update on Google Play',
-            default => 'Update Linking',
-        };
+        $channel = $this->distributionChannel();
+        return $channel === 'appstore' || $channel === 'play' ? $channel : null;
     }
 
     public function checkUpdate(bool $manual = false): void
@@ -858,6 +856,7 @@ final class LinkingApp
         $this->updateVersion = "{$this->currentVersion} ({$nextBuild})";
         $this->updateNotes = 'Telegram-style Update Capsule & instant APK self-upgrade';
         $this->updateDownloadUrl = 'https://github.com/owner888/agc_linking/releases/latest/download/Linking.apk';
+        $this->updateAssetSize = 0; // a preview has no download: the capsule shows the version
         $this->updateProgress = 0.0;
         $this->updateStatus = 'available';
         $this->appendLog('INFO', "Update capsule activated: v{$this->updateVersion} ready to install");

@@ -81,10 +81,10 @@ $h->clickText('Check for Updates');
 $h->frame();
 same('available', $app->updateStatus, 'Check for Updates detected newer build');
 same('2.0.0 (8)', $app->updateVersion, 'TestFlight-style version+build detected as 2.0.0 (8)');
-check($h->byText('Update Linking') !== null, 'Update Capsule is rendered with its title');
+check($h->byText('Update ' . MyPHP\App::name()) !== null, 'Update Capsule is rendered with its title');
 check($h->byText('2.0.0 (8)') !== null, 'Update Capsule shows the version');
 
-$h->clickText('Update Linking');
+$h->clickText('Update ' . MyPHP\App::name());
 $h->frame();
 same('installing', $app->updateStatus, 'Tapping the capsule downloaded and entered installing state');
 check($h->byText('Update Now') !== null, 'Update Capsule displays Update Now');
@@ -95,7 +95,7 @@ $h->frame();
 $app->skipUpdate();
 $h->frame();
 same('idle', $app->updateStatus, 'Skipping the update hides the Update Capsule');
-check($h->byText('Update Linking') === null, 'No capsule once skipped');
+check($h->byText('Update ' . MyPHP\App::name()) === null, 'No capsule once skipped');
 same('2.0.0 (8)', $app->skippedVersion, 'Skipped version recorded as 2.0.0 (8)');
 
 // 7. Test iOS App Store channel: jumps to App Store instead of downloading APK
