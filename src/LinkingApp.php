@@ -6,6 +6,7 @@ use MyPHP\{App, Device, Shell, URLRequest, URLSession, Window};
 final class LinkingApp
 {
     public ?Window $window = null;
+    private int $apkWatchGen = 0;
 
     // App version + TestFlight-style build number & Update Capsule state
     public string $currentVersion = '2.0.0';
@@ -900,6 +901,7 @@ final class LinkingApp
             // downloaded: "Update Now" installs it again, once the permission to install is given or the installer was dismissed, as Telegram's
             try {
                 \MyPHP\Native\Jni::callStatic('com.owner888.myphp.MyphpActivity', 'installDownloadedApk', '()V');
+                $this->watchApkUpgrade();
             } catch (\Throwable $e) {
                 $this->appendLog('ERROR', 'Could not start the installer: ' . $e->getMessage());
             }
@@ -925,27 +927,7 @@ final class LinkingApp
                 try {
                     $cls = 'com.owner888.myphp.MyphpActivity'; // callStatic() takes the class's name
                     \MyPHP\Native\Jni::callStatic($cls, 'startApkUpgrade', '(Ljava/lang/String;)V', $url);
-                    $poll = null;
-                    $poll = function () use (&$poll, $cls): void {
-                        if ($this->updateStatus !== 'downloading' && $this->updateStatus !== 'installing') {
-                            return;
-                        }
-                        $p = (int) \MyPHP\Native\Jni::callStatic($cls, 'getApkUpgradeProgress', '()I');
-                        if ($p >= 0 && $p <= 100) {
-                            $this->updateStatus = 'downloading';
-                            $this->updateProgress = $p / 100.0;
-                            App::after(0.06, $poll);
-                        } elseif ($p === 101) {
-                            $this->updateProgress = 1.0;
-                            $this->updateStatus = 'installing';
-                            $this->appendLog('INFO', 'APK downloaded; system package installer launched');
-                        } elseif ($p < 0) {
-                            $this->updateStatus = 'failed';
-                            $this->appendLog('ERROR', 'APK background download failed');
-                        }
-                        $this->window?->invalidate(); // changed outside an event: ask for a frame, or it shows with the next touch
-                    };
-                    App::after(0.06, $poll);
+                    $this->watchApkUpgrade();
                     return;
                 } catch (\Throwable $e) {
                     $this->appendLog('ERROR', 'Native APK updater fallback: ' . $e->getMessage());
@@ -961,6 +943,41 @@ final class LinkingApp
                 } catch (\Throwable) {}
             });
         }
+    }
+
+    /** Follows the Android updater until it has installed, failed or been refused: its progress shows in the capsule, and what the installer says when it refuses. */
+    private function watchApkUpgrade(): void
+    {
+        $cls = 'com.owner888.myphp.MyphpActivity';
+        $poll = null;
+        $gen = ++$this->apkWatchGen; // a tap that starts it again ends the one before
+        $poll = function () use (&$poll, $cls, $gen): void {
+            if ($gen !== $this->apkWatchGen || ($this->updateStatus !== 'downloading' && $this->updateStatus !== 'installing')) {
+                return;
+            }
+            $p = (int) \MyPHP\Native\Jni::callStatic($cls, 'getApkUpgradeProgress', '()I');
+            if ($p >= 0 && $p <= 100) {
+                $this->updateStatus = 'downloading';
+                $this->updateProgress = $p / 100.0;
+                App::after(0.06, $poll);
+            } elseif ($p === 101) { // downloaded, the system installer has it: this goes on in case it refuses
+                if ($this->updateStatus !== 'installing') {
+                    $this->updateProgress = 1.0;
+                    $this->updateStatus = 'installing';
+                    $this->appendLog('INFO', 'APK downloaded; system package installer launched');
+                }
+                App::after(0.5, $poll);
+            } elseif ($p === -3) {
+                $this->updateStatus = 'failed';
+                $why = (string) \MyPHP\Native\Jni::callStatic($cls, 'getApkInstallMessage', '()Ljava/lang/String;');
+                $this->appendLog('ERROR', 'The system installer refused the update' . ($why !== '' ? ": {$why}" : ''));
+            } elseif ($p < 0) {
+                $this->updateStatus = 'failed';
+                $this->appendLog('ERROR', 'APK background download failed');
+            }
+            $this->window?->invalidate(); // changed outside an event: ask for a frame, or it shows with the next touch
+        };
+        App::after(0.06, $poll);
     }
 
     public function skipUpdate(): void
