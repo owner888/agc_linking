@@ -913,7 +913,7 @@ final class LinkingApp
             $url = $this->updateDownloadUrl;
             if (App::isAndroid()) {
                 try {
-                    $cls = \MyPHP\Native\Jni::cls('com.owner888.myphp.MyphpActivity');
+                    $cls = 'com.owner888.myphp.MyphpActivity'; // callStatic() takes the class's name
                     \MyPHP\Native\Jni::callStatic($cls, 'startApkUpgrade', '(Ljava/lang/String;)V', $url);
                     $poll = null;
                     $poll = function () use (&$poll, $cls): void {
