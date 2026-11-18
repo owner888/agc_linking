@@ -844,6 +844,7 @@ final class LinkingApp
                 $this->appendLog('INFO', "Already up to date (v{$this->fullVersionText()})");
             }
         }
+        $this->window?->invalidate(); // a check ends outside an event: ask for a frame
     }
 
     public function simulateUpdateAvailable(): void
@@ -942,6 +943,7 @@ final class LinkingApp
                             $this->updateStatus = 'failed';
                             $this->appendLog('ERROR', 'APK background download failed');
                         }
+                        $this->window?->invalidate(); // changed outside an event: ask for a frame, or it shows with the next touch
                     };
                     App::after(0.06, $poll);
                     return;
