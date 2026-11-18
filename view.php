@@ -423,7 +423,7 @@ $favoritesSheet = fn() => NavigationStack()(
     )
         ->navigationTitle('Favorites')
         ->navigationBarTitleDisplayMode(TitleDisplayMode::inline),
-)->presentationDetents([PresentationDetent::large()]);
+)->presentationDetents([PresentationDetent::medium(), PresentationDetent::large()]);
 
 // ---------------------------------------------------------------------------------------------------------------
 // The app
