@@ -249,15 +249,11 @@ final class LinkingApp
 
         $this->recordHistory($target, $this->toolType);
         [$cleanHost, $port] = $this->parseHostPort($target);
-        $resolvedIp = $this->resolveHostIp($cleanHost);
-        [$country, $isp] = $this->lookupIpMeta($resolvedIp);
-        $this->ipCountry = $country;
-        $this->ipLocationDetail = "{$isp} ({$this->ipLibrary})";
-
-        $this->appendLog('INFO', "Started {$this->toolType} -> {$target} [{$resolvedIp}] (TTL={$this->ttl}, Timeout={$this->timeOut}s, Size={$this->packetSize}B)");
 
         // Perform immediate first probe (and 3 more in deterministic mode)
         if ($this->deterministicProbes) {
+            $resolvedIp = $this->resolveHostIp($cleanHost);
+            $this->showIpMeta($resolvedIp, $target);
             for ($seq = 1; $seq <= 4; $seq++) {
                 $this->probeOnce($seq, $target, $cleanHost, $resolvedIp, $port);
             }
@@ -265,24 +261,39 @@ final class LinkingApp
             return;
         }
 
-        // First probe immediately
-        $this->probeOnce(1, $target, $cleanHost, $resolvedIp, $port);
-
+        // Everything that waits (the name, each probe, the pause between them) runs in a fiber: the run loop, which
+        // draws the UI, goes on meanwhile. A usleep() or a blocking connect here would freeze the app.
         if (class_exists(App::class)) {
-            App::go(function () use ($gen, $target, $cleanHost, $resolvedIp, $port) {
-                $seq = 2;
+            App::go(function () use ($gen, $target, $cleanHost, $port) {
+                $resolvedIp = $this->resolveHostIp($cleanHost);
+                if ($this->runGeneration !== $gen) {
+                    return;
+                }
+                $this->showIpMeta($resolvedIp, $target);
+                $this->window?->invalidate();
+                $seq = 1;
                 while ($this->isRunning && $this->runGeneration === $gen && $seq <= 100) {
-                    usleep(max(1, $this->interval) * 1_000_000);
+                    $this->probeOnce($seq++, $target, $cleanHost, $resolvedIp, $port);
+                    $this->window?->invalidate(); // a probe ends outside an event: ask for a frame
                     if (!$this->isRunning || $this->runGeneration !== $gen) {
                         break;
                     }
-                    $this->probeOnce($seq++, $target, $cleanHost, $resolvedIp, $port);
+                    App::sleep(max(1, $this->interval));
                 }
                 if ($this->runGeneration === $gen) {
                     $this->isRunning = false;
+                    $this->window?->invalidate();
                 }
             });
         }
+    }
+
+    private function showIpMeta(string $resolvedIp, string $target): void
+    {
+        [$country, $isp] = $this->lookupIpMeta($resolvedIp);
+        $this->ipCountry = $country;
+        $this->ipLocationDetail = "{$isp} ({$this->ipLibrary})";
+        $this->appendLog('INFO', "Started {$this->toolType} -> {$target} [{$resolvedIp}] (TTL={$this->ttl}, Timeout={$this->timeOut}s, Size={$this->packetSize}B)");
     }
 
     public function stopPing(): void
@@ -359,19 +370,15 @@ final class LinkingApp
                 $url = str_starts_with($rawTarget, 'http://') || str_starts_with($rawTarget, 'https://')
                     ? $rawTarget
                     : 'https://' . $host;
-                $ch = curl_init($url);
-                curl_setopt_array($ch, [
-                    CURLOPT_NOBODY => true,
-                    CURLOPT_RETURNTRANSFER => true,
-                    CURLOPT_TIMEOUT => max(1, $this->timeOut),
-                    CURLOPT_CONNECTTIMEOUT => max(1, $this->timeOut),
-                    CURLOPT_FOLLOWLOCATION => true,
-                    CURLOPT_SSL_VERIFYPEER => false,
-                ]);
-                @curl_exec($ch);
-                $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-                $err = curl_error($ch);
-                curl_close($ch);
+                $code = 0;
+                $err = '';
+                try { // in a fiber: waits without holding the run loop
+                    $req = new URLRequest($url, 'HEAD', [], null, (float) max(1, $this->timeOut));
+                    [, $response] = URLSession::shared()->data($req);
+                    $code = $response->statusCode;
+                } catch (\Throwable $e) {
+                    $err = $e->getMessage();
+                }
                 $elapsed = (int) round((hrtime(true) - $t0) / 1_000_000);
                 if ($code > 0) {
                     $ms = max(1, $elapsed);
@@ -383,24 +390,16 @@ final class LinkingApp
                 }
             } else {
                 $targetPort = $mode === 'Tcping' ? $port : 443;
-                $errno = 0;
-                $errstr = '';
-                $sock = @fsockopen($ip, $targetPort, $errno, $errstr, max(1, $this->timeOut));
-                $elapsed = (int) round((hrtime(true) - $t0) / 1_000_000);
-                if (is_resource($sock)) {
-                    fclose($sock);
-                    $ms = max(1, $elapsed);
+                $ms = $this->tcpConnectMs($ip, $targetPort);
+                if ($ms !== null) {
                     $status = $mode === 'Tcping'
                         ? "TCP {$ip}:{$targetPort} connected (ttl={$this->ttl})"
                         : "{$this->packetSize} bytes from {$ip}: seq={$seq} ttl={$this->ttl}";
                 } else {
                     // Fallback to port 80 if Ping mode and 443 refused
-                    $t1 = hrtime(true);
-                    $sock80 = ($mode === 'Ping') ? @fsockopen($ip, 80, $errno, $errstr, max(1, $this->timeOut)) : false;
-                    $elapsed80 = (int) round((hrtime(true) - $t1) / 1_000_000);
-                    if (is_resource($sock80)) {
-                        fclose($sock80);
-                        $ms = max(1, $elapsed80);
+                    $ms80 = $mode === 'Ping' ? $this->tcpConnectMs($ip, 80) : null;
+                    if ($ms80 !== null) {
+                        $ms = $ms80;
                         $status = "{$this->packetSize} bytes from {$ip}: seq={$seq} ttl={$this->ttl}";
                     } else {
                         $ok = false;
@@ -424,6 +423,40 @@ final class LinkingApp
             'ok' => $ok,
             'time' => date('H:i:s'),
         ]);
+    }
+
+    /**
+     * Milliseconds a TCP connection to $ip:$port takes, null when it is refused or not made within the timeout. The
+     * connect is not blocking: the wait goes through App::sleep, so the app draws and takes touches meanwhile.
+     */
+    private function tcpConnectMs(string $ip, int $port): ?int
+    {
+        $t0 = hrtime(true);
+        $errno = 0;
+        $errstr = '';
+        $addr = (str_contains($ip, ':') ? "[{$ip}]" : $ip) . ":{$port}";
+        $sock = @stream_socket_client("tcp://{$addr}", $errno, $errstr, 0, STREAM_CLIENT_CONNECT | STREAM_CLIENT_ASYNC_CONNECT);
+        if (!is_resource($sock)) {
+            return null;
+        }
+        stream_set_blocking($sock, false);
+        $deadline = microtime(true) + max(1, $this->timeOut);
+        try {
+            while (microtime(true) < $deadline) {
+                $read = null;
+                $write = [$sock];
+                $except = [$sock];
+                if (@stream_select($read, $write, $except, 0, 0) > 0) {
+                    return $write !== [] && @stream_socket_get_name($sock, true) !== false
+                        ? max(1, (int) round((hrtime(true) - $t0) / 1_000_000))
+                        : null;
+                }
+                App::sleep(0.01);
+            }
+            return null;
+        } finally {
+            fclose($sock);
+        }
     }
 
     /** @return array{0: string, 1: int} */
