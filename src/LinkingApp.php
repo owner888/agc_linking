@@ -594,8 +594,17 @@ final class LinkingApp
     {
         $this->toolType = $mode;
         $this->hostInput = $host;
-        $this->tab = 'ping';
         $this->startPing();
+        if ($this->deterministicProbes || !class_exists(App::class)) {
+            $this->tab = 'ping';
+            return;
+        }
+        // The tap is handled while the TabView builds its page, which then writes its own tab back into $this->tab:
+        // the change is made on the next turn of the run loop, which the tab bar follows.
+        App::later(function (): void {
+            $this->tab = 'ping';
+            $this->window?->invalidate();
+        });
     }
 
     private function recordHistory(string $host, string $mode): void

@@ -39,7 +39,7 @@ $pingView = fn() => ListView()(
                 ->onSubmit(fn() => $this->startPing()),
         ),
         HStack(spacing: 0)(
-            Button($this->isRunning ? 'Stop' : 'Start', action: fn() => $this->togglePing(), systemImage: $this->isRunning ? 'stop.fill' : 'play.fill')
+            Button($this->isRunning ? 'Stop' : 'Start', action: fn() => $this->togglePing(), systemImage: $this->isRunning ? 'pause.fill' : 'play.fill')
                 ->buttonStyle(ButtonStyle::borderedProminent)
                 ->tint($this->isRunning ? $errRed : $accentBlue)
                 ->frame(maxWidth: INF),
@@ -110,7 +110,7 @@ $pingView = fn() => ListView()(
 $networkView = fn() => ListView()(
     Section(
         header: $this->vpnConnected ? 'Tunnel Connected' : 'Tunnel Ready',
-        footer: "Session Traffic: {$this->sessionTraffic}"
+        footer: $this->vpnConnected ? "Session Traffic: {$this->sessionTraffic}" : ''
     )(
         LabeledContent('Status', $this->vpnConnected ? 'ACTIVE' : 'STANDBY'),
         LabeledContent('Current Outbound', $this->activeNode()['name']),
@@ -121,89 +121,103 @@ $networkView = fn() => ListView()(
             Text('Global')->tag('Global'),
             Text('Direct')->tag('Direct'),
         )->pickerStyle(PickerStyle::segmented),
-        Button($this->vpnConnected ? 'Disconnect' : 'Connect Tunnel', action: fn() => $this->toggleVpn())
-            ->buttonStyle(ButtonStyle::borderedProminent)
-            ->tint($this->vpnConnected ? $okGreen : $accentBlue),
+        HStack(spacing: 0)(
+            Button($this->vpnConnected ? 'Disconnect' : 'Connect Tunnel', action: fn() => $this->toggleVpn(), systemImage: $this->vpnConnected ? 'xmark.circle.fill' : 'network')
+                ->buttonStyle(ButtonStyle::borderedProminent)
+                ->tint($this->vpnConnected ? $okGreen : $accentBlue)
+                ->frame(maxWidth: INF),
+        )->padding(Edge::vertical, 4)->padding(Edge::horizontal, 16),
     ),
 
     Section(header: 'Import Profile or Subscription')(
-        TextField('Profile URI', text: $this->nodeImportInput, prompt: 'vless://, trojan://, hy2:// or https://...')
-            ->onSubmit(fn() => $this->importNodeUri()),
-        HStack(spacing: 10)(
-            Button('Import Profile', action: fn() => $this->importNodeUri())
-                ->buttonStyle(ButtonStyle::borderedProminent),
-            Button('Test All Latency', action: fn() => $this->testAllNodesLatency())
-                ->buttonStyle(ButtonStyle::bordered),
+        HStack(alignment: VerticalAlignment::center, spacing: 12)(
+            Text('Link'),
+            TextField('Link', text: $this->nodeImportInput, prompt: 'vless://, trojan://, hy2://, https://')
+                ->multilineTextAlignment(TextAlignment::trailing)
+                ->textInputAutocapitalization(TextInputAutocapitalization::never)
+                ->autocorrectionDisabled()
+                ->onSubmit(fn() => $this->importNodeUri()),
         ),
+        Button('Import Profile', action: fn() => $this->importNodeUri(), systemImage: 'square.and.arrow.down')
+            ->buttonStyle(ButtonStyle::borderless),
+        Button('Test All Latency', action: fn() => $this->testAllNodesLatency(), systemImage: 'clock')
+            ->buttonStyle(ButtonStyle::borderless),
     ),
 
-    Section(header: 'Outbound Proxy Nodes')(
-        Each($this->proxyNodes, id: 'id')(fn(array $node) => HStack(alignment: VerticalAlignment::center, spacing: 10)(
+    Section(header: 'Outbound Proxy Nodes (' . count($this->proxyNodes) . ')')(
+        Each($this->proxyNodes, id: 'id')(fn(array $node) => Button(action: fn() => $this->selectNode($node['id']), label: HStack(alignment: VerticalAlignment::center, spacing: 10)(
             VStack(alignment: HorizontalAlignment::leading, spacing: 2)(
-                Text(verbatim: $node['name'])->font(Font::subheadline),
-                Text(verbatim: "{$node['protocol']} · {$node['address']}:{$node['port']} ({$node['region']})")
+                Text(verbatim: $node['name'])->font(Font::subheadline)->lineLimit(1),
+                Text(verbatim: "{$node['protocol']} · {$node['address']}:{$node['port']}")
                     ->font(Font::caption)
                     ->foregroundStyle(Color::secondary)
                     ->lineLimit(1),
             )->frame(maxWidth: INF, alignment: Alignment::leading),
             Text(verbatim: $node['latency'] . ' ms')
                 ->font(Font::subheadline)
-                ->foregroundStyle($node['latency'] < 80 ? $okGreen : $warnAmber),
-            Button(
-                $this->activeNodeId === $node['id'] ? 'Selected' : 'Use Node',
-                action: fn() => $this->selectNode($node['id'])
-            )->buttonStyle($this->activeNodeId === $node['id'] ? ButtonStyle::borderedProminent : ButtonStyle::bordered),
-        )),
+                ->foregroundStyle($node['latency'] < 80 ? $okGreen : $warnAmber)
+                ->lineLimit(1)
+                ->fixedSize(),
+            Image(systemName: 'checkmark')
+                ->foregroundStyle($accentBlue)
+                ->opacity($this->activeNodeId === $node['id'] ? 1.0 : 0.0),
+        ))->buttonStyle(ButtonStyle::plain)),
     ),
 )
     ->navigationTitle('Network')
     ->navigationBarTitleDisplayMode(TitleDisplayMode::large);
 
 $favoritesView = fn() => ListView()(
-    Section(header: 'Add New Host')(
-        TextField('Host or IP', text: $this->newFavHost, prompt: 'e.g. 8.8.4.4 or github.com'),
-        TextField('Remark', text: $this->newFavDesc, prompt: 'Description / Remark')
-            ->onSubmit(fn() => $this->addFavorite()),
-        Button('Add Host', action: fn() => $this->addFavorite())
-            ->buttonStyle(ButtonStyle::borderedProminent),
-    ),
-
-    Section(header: 'Saved Hosts (' . count($this->favorites) . ')')(
+    Section(header: 'Saved Hosts (' . count($this->favorites) . ')', footer: $this->favorites === [] ? '' : 'Tap to ping. Swipe a row for Tcping, Httping or Delete.')(
         $this->favorites === []
-            ? ContentUnavailableView('No Favorites Yet', systemImage: 'star.slash', description: 'Add frequently tested hosts or DNS servers above.')
-            : Each($this->favorites, id: 'id')(fn(array $fav) => HStack(alignment: VerticalAlignment::center, spacing: 8)(
+            ? ContentUnavailableView('No Favorites Yet', systemImage: 'star.fill', description: 'Add frequently tested hosts or DNS servers below.')
+            : Each($this->favorites, id: 'id')(fn(array $fav) => Button(action: fn() => $this->probeFavorite($fav['host'], 'Ping'), label: HStack(alignment: VerticalAlignment::center, spacing: 10)(
                 VStack(alignment: HorizontalAlignment::leading, spacing: 2)(
-                    Text(verbatim: "{$fav['host']} · {$fav['tag']}")->font(Font::subheadline),
+                    Text(verbatim: $fav['host'])->font(Font::subheadline)->lineLimit(1),
                     Text(verbatim: $fav['description'])
                         ->font(Font::caption)
                         ->foregroundStyle(Color::secondary)
                         ->lineLimit(1),
                 )->frame(maxWidth: INF, alignment: Alignment::leading),
-                Button('Ping', action: fn() => $this->probeFavorite($fav['host'], 'Ping'))
-                    ->buttonStyle(ButtonStyle::bordered),
-                Button('Tcping', action: fn() => $this->probeFavorite($fav['host'], 'Tcping'))
-                    ->buttonStyle(ButtonStyle::bordered),
-            )->swipeActions(
+                Text(verbatim: $fav['tag'])->font(Font::caption)->foregroundStyle(Color::secondary)->lineLimit(1)->fixedSize(),
+                Image(systemName: 'chevron.right')->font(Font::caption)->foregroundStyle(Color::secondary),
+            ))->buttonStyle(ButtonStyle::plain)->swipeActions(
+                Button('Tcping', action: fn() => $this->probeFavorite($fav['host'], 'Tcping')),
                 Button('Httping', action: fn() => $this->probeFavorite($fav['host'], 'Httping')),
                 Button('Delete', role: ButtonRole::destructive, action: fn() => $this->removeFavorite($fav['id'])),
             )),
     ),
 
-    Section(header: 'Recent History (' . count($this->history) . ')')(
-        $this->history === []
-            ? Text('No recent probe history.')->font(Font::caption)->foregroundStyle(Color::secondary)
-            : Each($this->history, id: 'id')(fn(array $h) => HStack(alignment: VerticalAlignment::center, spacing: 8)(
+    Section(header: 'New Favorite')(
+        HStack(alignment: VerticalAlignment::center, spacing: 12)(
+            Text('Host'),
+            TextField('Host', text: $this->newFavHost, prompt: 'IP or domain')
+                ->multilineTextAlignment(TextAlignment::trailing)
+                ->textInputAutocapitalization(TextInputAutocapitalization::never)
+                ->autocorrectionDisabled(),
+        ),
+        HStack(alignment: VerticalAlignment::center, spacing: 12)(
+            Text('Remark'),
+            TextField('Remark', text: $this->newFavDesc, prompt: 'Optional')
+                ->multilineTextAlignment(TextAlignment::trailing)
+                ->onSubmit(fn() => $this->addFavorite()),
+        ),
+        Button('Add Host', action: fn() => $this->addFavorite(), systemImage: 'plus')
+            ->buttonStyle(ButtonStyle::borderless),
+    ),
+
+    $this->history !== []
+        ? Section(header: 'Recent History (' . count($this->history) . ')')(
+            Each($this->history, id: 'id')(fn(array $h) => Button(action: fn() => $this->probeFavorite($h['host'], $h['mode']), label: HStack(alignment: VerticalAlignment::center, spacing: 10)(
                 VStack(alignment: HorizontalAlignment::leading, spacing: 2)(
                     Text(verbatim: $h['host'])->font(Font::subheadline)->lineLimit(1),
                     Text(verbatim: "{$h['mode']} · {$h['time']}")->font(Font::caption)->foregroundStyle(Color::secondary),
                 )->frame(maxWidth: INF, alignment: Alignment::leading),
-                Button('Re-run', action: fn() => $this->probeFavorite($h['host'], $h['mode']))
-                    ->buttonStyle(ButtonStyle::bordered),
-            )),
-        $this->history !== []
-            ? Button('Clear History', role: ButtonRole::destructive, action: fn() => $this->clearHistory())
-            : null,
-    ),
+                Image(systemName: 'arrow.clockwise')->font(Font::caption)->foregroundStyle(Color::secondary),
+            ))->buttonStyle(ButtonStyle::plain)),
+            Button('Clear History', role: ButtonRole::destructive, action: fn() => $this->clearHistory()),
+        )
+        : null,
 )
     ->navigationTitle('Favorites')
     ->navigationBarTitleDisplayMode(TitleDisplayMode::large);
