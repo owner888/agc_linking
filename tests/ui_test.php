@@ -10,6 +10,7 @@ if (!str_starts_with($framework, '/')) {
 require "$framework/tests/Headless.php";
 require __DIR__ . '/../src/LinkingApp.php';
 
+use MyPHP\Device;
 use MyPHP\Tests\Headless;
 use MyPHP\UI\Content;
 use function MyPHP\Tests\{check, same};
@@ -90,6 +91,28 @@ $h->clickText('✕');
 $h->frame();
 same('idle', $app->updateStatus, 'Clicking dismiss ✕ hides the Update Capsule');
 same('2.1.0', $app->skippedVersion, 'Skipped version recorded as 2.1.0');
+
+// 7. Test iOS App Store channel: jumps to App Store instead of downloading APK
+Device::setChannel('appstore');
+$app->skippedVersion = '';
+$app->checkUpdate(true);
+$h->frame();
+same('available', $app->updateStatus, 'App Store channel shows update notification');
+check($h->byText('APP STORE') !== null, 'App Store channel displays APP STORE button');
+$h->clickText('APP STORE');
+$h->frame();
+same($app->appStoreUrl, $app->lastOpenedExternalUrl, 'Clicking APP STORE jumps to Apple App Store URL');
+
+// 8. Test Google Play Store channel: in-app update capsule completely removed/disabled!
+Device::setChannel('play');
+$app->checkUpdate(false);
+$h->frame();
+same('idle', $app->updateStatus, 'Play Store channel disables automatic in-app update check');
+check($h->byText('Check for Updates') === null, 'Play Store channel hides Check for Updates button');
+check($h->byText('Preview Update Capsule') === null, 'Play Store channel hides Preview Update Capsule button');
+$app->performUpdate();
+same($app->playStoreUrl, $app->lastOpenedExternalUrl, 'Play Store performUpdate redirects to Google Play Store URL');
+Device::setChannel(null);
 
 echo "All Linking headless UI tests passed!\n";
 exit(empty($GLOBALS['failures']) ? 0 : 1);

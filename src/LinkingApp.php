@@ -1,14 +1,18 @@
 <?php
 declare(strict_types=1);
 
-use MyPHP\{App, Shell, URLRequest, URLSession, Window};
+use MyPHP\{App, Device, Shell, URLRequest, URLSession, Window};
 
 final class LinkingApp
 {
     public ?Window $window = null;
 
-    // App version & Update Capsule state (matches agc_toolkit UpdateCapsuleWidget)
-    public string $currentVersion = '2.0.0';
+    // App version & Update Capsule state (matches agc_toolkit UpdateCapsuleWidget & AppUpdateService)
+    public string $currentVersion = '2.0.1';
+    public string $packageName = 'easy.net.tool';
+    public string $playStoreUrl = 'https://play.google.com/store/apps/details?id=easy.net.tool';
+    public string $appStoreUrl = 'https://apps.apple.com/app/id6463097701';
+    public string $githubReleaseUrl = 'https://github.com/owner888/agc_linking/releases/latest';
     public string $updateStatus = 'idle'; // 'idle' | 'checking' | 'available' | 'downloading' | 'installing' | 'failed'
     public string $updateVersion = '';
     public string $updateNotes = '';
@@ -16,6 +20,7 @@ final class LinkingApp
     public float $updateProgress = 0.0;
     public bool $updateForce = false;
     public string $skippedVersion = '';
+    public string $lastOpenedExternalUrl = '';
 
     // Navigation tab: 'network' | 'ping' | 'favorites' | 'settings'
     public string $tab = 'ping';
@@ -665,10 +670,48 @@ final class LinkingApp
         $this->appendLog('INFO', "Imported {$protocol} profile: {$name}");
     }
 
-    // --- In-App Update Capsule Actions (GitHub Releases) ---
+    // --- Channel-Aware Update Actions (App Store / Play Store / Standalone APK) ---
+
+    /**
+     * Current distribution channel:
+     * - 'play': Google Play Store build (in-app self-update disabled per Google Play policy; jumps to Play Store)
+     * - 'appstore': Apple iOS/iPadOS App Store build (jumps to App Store)
+     * - 'apk': Standalone Android APK build (in-app download + PackageInstaller self-upgrade)
+     * - 'desktop': macOS / Windows / Linux build
+     */
+    public function distributionChannel(): string
+    {
+        return Device::channel();
+    }
+
+    /** Whether in-app update capsule & APK self-upgrade are allowed on this build. */
+    public function isInAppUpdateAllowed(): bool
+    {
+        return !Device::isPlayStore();
+    }
+
+    public function updateActionButtonTitle(): string
+    {
+        return match ($this->distributionChannel()) {
+            'appstore' => 'APP STORE',
+            'play' => 'PLAY STORE',
+            default => 'UPDATE',
+        };
+    }
 
     public function checkUpdate(bool $manual = false): void
     {
+        // Google Play policy strictly forbids in-app self-update prompts/downloads;
+        // on Play Store builds, manual check jumps directly to Google Play Store, automatic check is a no-op.
+        if (Device::isPlayStore()) {
+            $this->updateStatus = 'idle';
+            $this->updateVersion = '';
+            if ($manual) {
+                $this->openExternalUrl($this->playStoreUrl, 'Redirecting to Google Play Store for update...');
+            }
+            return;
+        }
+
         if ($this->updateStatus === 'downloading' || $this->updateStatus === 'installing') {
             return;
         }
@@ -754,6 +797,10 @@ final class LinkingApp
 
     public function simulateUpdateAvailable(): void
     {
+        if (Device::isPlayStore()) {
+            $this->appendLog('INFO', 'Play Store build: in-app update capsule is disabled per Google Play policy');
+            return;
+        }
         $this->updateVersion = '2.1.0';
         $this->updateNotes = 'Telegram-style Update Capsule & instant APK self-upgrade';
         $this->updateDownloadUrl = 'https://github.com/owner888/agc_linking/releases/latest/download/Linking.apk';
@@ -762,8 +809,39 @@ final class LinkingApp
         $this->appendLog('INFO', 'Update capsule activated: v2.1.0 ready to install');
     }
 
+    private function openExternalUrl(string $url, string $logMessage): void
+    {
+        $this->lastOpenedExternalUrl = $url;
+        $this->appendLog('INFO', "{$logMessage} ({$url})");
+        if (!$this->deterministicProbes && class_exists(Shell::class)) {
+            try {
+                Shell::openExternal($url);
+            } catch (\Throwable) {
+            }
+        }
+    }
+
     public function performUpdate(): void
     {
+        $channel = $this->distributionChannel();
+
+        // 1. iOS / iPadOS App Store build -> jump to Apple App Store
+        if ($channel === 'appstore') {
+            $this->openExternalUrl($this->appStoreUrl, 'Opening Apple App Store to update Linking');
+            $this->updateStatus = 'idle';
+            $this->updateVersion = '';
+            return;
+        }
+
+        // 2. Android Google Play Store build -> jump to Google Play Store (never download APK in-app)
+        if ($channel === 'play') {
+            $this->openExternalUrl($this->playStoreUrl, 'Opening Google Play Store to update Linking');
+            $this->updateStatus = 'idle';
+            $this->updateVersion = '';
+            return;
+        }
+
+        // 3. Standalone APK / Desktop build -> in-app download & install
         if ($this->updateVersion === '' || $this->updateStatus === 'downloading' || $this->updateStatus === 'installing') {
             return;
         }

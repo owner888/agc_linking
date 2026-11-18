@@ -9,16 +9,19 @@ $okGreen = Color::rgb(0x16A34A);
 $warnAmber = Color::rgb(0xD97706);
 $errRed = Color::rgb(0xDC2626);
 
-$updateCapsuleBar = fn() => UpdateCapsule(
-    version: $this->updateVersion,
-    status: $this->updateStatus,
-    progress: $this->updateProgress,
-    notes: $this->updateNotes,
-    force: $this->updateForce,
-    onAction: fn() => $this->performUpdate(),
-    onDismiss: fn() => $this->skipUpdate(),
-    tint: $accentGold,
-);
+$updateCapsuleBar = fn() => $this->isInAppUpdateAllowed()
+    ? UpdateCapsule(
+        version: $this->updateVersion,
+        status: $this->updateStatus,
+        progress: $this->updateProgress,
+        notes: $this->updateNotes,
+        force: $this->updateForce,
+        onAction: fn() => $this->performUpdate(),
+        onDismiss: fn() => $this->skipUpdate(),
+        tint: $accentGold,
+        actionTitle: $this->updateActionButtonTitle(),
+    )
+    : EmptyView();
 
 $statCard = fn(string $label, string $value, ?string $sub = null) => VStack(alignment: HorizontalAlignment::leading, spacing: 4)(
     Text($label)->font(Font::caption)->foregroundStyle(Color::secondary),
@@ -364,15 +367,17 @@ $settingsView = fn() => ScrollView(Axis::vertical)(
         HStack(alignment: VerticalAlignment::center, spacing: 12)(
             VStack(alignment: HorizontalAlignment::leading, spacing: 2)(
                 Text('Settings & Diagnostic Logs')->font(Font::title2),
-                Text(verbatim: "Linking v{$this->currentVersion} · Package easy.net.tool")
+                Text(verbatim: "Linking v{$this->currentVersion} · {$this->packageName} · Channel: " . strtoupper($this->distributionChannel()))
                     ->font(Font::caption)
                     ->foregroundStyle(Color::secondary),
             ),
             Spacer(),
-            Button('Check for Updates', action: fn() => $this->checkUpdate(true))
-                ->buttonStyle(ButtonStyle::borderedProminent),
-            Button('Preview Update Capsule', action: fn() => $this->simulateUpdateAvailable())
-                ->buttonStyle(ButtonStyle::bordered),
+            $this->isInAppUpdateAllowed()
+                ? Button('Check for Updates', action: fn() => $this->checkUpdate(true))->buttonStyle(ButtonStyle::borderedProminent)
+                : Button('Rate on Google Play', action: fn() => $this->checkUpdate(true))->buttonStyle(ButtonStyle::bordered),
+            $this->isInAppUpdateAllowed()
+                ? Button('Preview Update Capsule', action: fn() => $this->simulateUpdateAvailable())->buttonStyle(ButtonStyle::bordered)
+                : null,
             Button('Reset to Default', action: fn() => $this->resetConfig())
                 ->buttonStyle(ButtonStyle::bordered),
         ),
