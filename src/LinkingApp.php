@@ -8,7 +8,7 @@ final class LinkingApp
     public ?Window $window = null;
 
     // App version & Update Capsule state (matches agc_toolkit UpdateCapsuleWidget & AppUpdateService)
-    public string $currentVersion = '2.0.2';
+    public string $currentVersion = '2.0.3';
     public string $packageName = 'easy.net.tool';
     public string $playStoreUrl = 'https://play.google.com/store/apps/details?id=easy.net.tool';
     public string $appStoreUrl = 'https://apps.apple.com/app/id6463097701';
@@ -25,6 +25,10 @@ final class LinkingApp
 
     // Navigation tab: 'network' | 'ping' | 'favorites' | 'settings'
     public string $tab = 'ping';
+    public \NavigationPath $pingPath;
+    public \NavigationPath $netPath;
+    public \NavigationPath $favPath;
+    public \NavigationPath $settingsPath;
 
     // Tool mode: 'Ping' | 'Httping' | 'Tcping'
     public string $toolType = 'Ping';
@@ -131,6 +135,10 @@ final class LinkingApp
                 $this->currentVersion = (string) $cfg['version'];
             }
         }
+        $this->pingPath = new \NavigationPath();
+        $this->netPath = new \NavigationPath();
+        $this->favPath = new \NavigationPath();
+        $this->settingsPath = new \NavigationPath();
         $this->seedDefaults();
     }
 
