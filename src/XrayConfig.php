@@ -21,7 +21,7 @@ final class XrayConfig
         $out = match ($p['scheme']) {
             'vless' => $p['user'] === '' ? null : ['protocol' => 'vless', 'settings' => ['vnext' => [[
                 'address' => $p['host'], 'port' => $p['port'],
-                'users' => [array_filter(['id' => $p['user'], 'encryption' => $q['encryption'] ?? 'none', 'flow' => $q['flow'] ?? ''], static fn($v) => $v !== '')],
+                'users' => [array_filter(['id' => $p['user'], 'encryption' => $q['encryption'] ?? 'none', 'flow' => $q['flow'] ?? (($q['xtls'] ?? '') === '2' ? 'xtls-rprx-vision' : '')], static fn($v) => $v !== '')],
             ]]]],
             'vmess' => self::vmess($p),
             'trojan' => $p['user'] === '' ? null : ['protocol' => 'trojan', 'settings' => ['servers' => [['address' => $p['host'], 'port' => $p['port'], 'password' => rawurldecode($p['user'])]]]],

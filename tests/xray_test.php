@@ -35,6 +35,7 @@ same('reality', $o['streamSettings']['security'], 'pbk means reality');
 same('www.example.org', $o['streamSettings']['realitySettings']['serverName'], 'peer is the server name');
 same('chrome', $o['streamSettings']['realitySettings']['fingerprint'], 'fingerprint');
 same($uuid, $o['settings']['vnext'][0]['users'][0]['id'], 'the id is not "none"');
+same('xtls-rprx-vision', $o['settings']['vnext'][0]['users'][0]['flow'], 'Shadowrocket\'s xtls=2 is the Vision flow');
 
 // ws over tls
 $o = XrayConfig::outbound("vless://$uuid@example.com:443?type=ws&security=tls&sni=s.example.com&path=%2Fws&host=h.example.com");
