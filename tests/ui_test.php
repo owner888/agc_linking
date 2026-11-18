@@ -20,10 +20,12 @@ $h = new Headless(Content::file(__DIR__ . '/../view.php', $app)->view, 1120, 740
 $h->rt->strict = true;
 $h->frame();
 
-// 1. Default Ping Tools tab renders 8 statistics & initial sample packets
+// 1. Default Ping Tools tab renders the statistics, with nothing measured yet: no sample data
 check($h->byText('Network Diagnostics') !== null, 'Ping Tools header renders');
-same(5, $app->sentCount(), 'Initial sample probe count is 5');
-check($h->byText('17 ms') !== null, 'Initial Avg RTT renders');
+same(0, $app->sentCount(), 'No probes before the first Start');
+same('-', $app->ipCountry, 'No country before a target is probed');
+check($h->byText('No Probe Data Yet') !== null, 'Empty state shows until a probe is made');
+check($h->byText('Start') !== null, 'Start button renders');
 
 // 2. Switch tool mode to Tcping and run deterministic probe
 $h->clickText('Tcping');
@@ -40,6 +42,13 @@ same('US', $app->ipCountry, 'GitHub IP country resolved to US');
 $h->clickText('NSLookup');
 $h->frame();
 check(count($app->nslookupResults) >= 1, 'NSLookup populated DNS A records');
+
+// A quick target is a row: a tap probes it in its mode
+$h->clickText('8.8.8.8');
+$h->frame();
+same('8.8.8.8', $app->hostInput, 'A quick target fills the host');
+same(4, $app->sentCount(), 'A quick target starts probing');
+same('Ping', $app->toolType, 'A quick target keeps its mode');
 
 // 4. Switch to Network tab and test VPN connect & node import
 $app->tab = 'network';

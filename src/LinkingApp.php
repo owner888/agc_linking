@@ -72,8 +72,8 @@ final class LinkingApp
     public array $pingRecords = [];
     private int $nextRecordId = 1;
 
-    public string $ipCountry = 'US';
-    public string $ipLocationDetail = 'Cloudflare, Inc. (AS13335)';
+    public string $ipCountry = '-';
+    public string $ipLocationDetail = '';
 
     // Ping configuration (matches agc_raven defaults)
     public int $ttl = 64;
@@ -157,12 +157,6 @@ final class LinkingApp
             ['id' => $this->nextFavId++, 'host' => '223.5.5.5', 'description' => 'AliDNS Public Resolver', 'tag' => 'CN'],
         ];
 
-        $this->history = [
-            ['id' => $this->nextHistId++, 'host' => '1.1.1.1', 'mode' => 'Ping', 'time' => '10:24:05'],
-            ['id' => $this->nextHistId++, 'host' => 'https://cp.cloudflare.com/generate_204', 'mode' => 'Httping', 'time' => '10:22:18'],
-            ['id' => $this->nextHistId++, 'host' => 'github.com:443', 'mode' => 'Tcping', 'time' => '10:19:42'],
-        ];
-
         $this->proxyNodes = [
             ['id' => $this->nextNodeId++, 'name' => 'SG-01 · Singapore Premium', 'protocol' => 'VLESS-Vision', 'address' => 'sg1.linking.edge', 'port' => 443, 'region' => 'SG', 'latency' => 36],
             ['id' => $this->nextNodeId++, 'name' => 'JP-02 · Tokyo IIJ Direct', 'protocol' => 'Hysteria2', 'address' => 'jp2.linking.edge', 'port' => 8443, 'region' => 'JP', 'latency' => 48],
@@ -170,25 +164,6 @@ final class LinkingApp
             ['id' => $this->nextNodeId++, 'name' => 'US-01 · Los Angeles CN2', 'protocol' => 'VLESS-Reality', 'address' => 'us1.linking.edge', 'port' => 443, 'region' => 'US', 'latency' => 142],
         ];
         $this->activeNodeId = 3; // HK-01
-
-        // Initial sample probe records so the Ping dashboard looks rich out of the box
-        $samples = [18, 16, 17, 19, 16];
-        foreach ($samples as $idx => $ms) {
-            $seq = count($samples) - $idx;
-            $this->pingRecords[] = [
-                'id' => $this->nextRecordId++,
-                'seq' => $seq,
-                'host' => '1.1.1.1',
-                'ip' => '1.1.1.1',
-                'mode' => 'Ping',
-                'ttl' => $this->ttl,
-                'bytes' => $this->packetSize,
-                'ms' => $ms,
-                'status' => '64 bytes from 1.1.1.1: icmp_seq=' . $seq . ' ttl=' . $this->ttl,
-                'ok' => true,
-                'time' => sprintf('10:24:%02d', $seq),
-            ];
-        }
 
         $this->appendLog('INFO', 'Linking v2.0 (MyPHP GPU Native) initialized');
         $this->appendLog('INFO', 'Loaded 4 favorite hosts and 4 outbound proxy profiles');
@@ -252,7 +227,7 @@ final class LinkingApp
 
         // Perform immediate first probe (and 3 more in deterministic mode)
         if ($this->deterministicProbes) {
-            $resolvedIp = $this->resolveHostIp($cleanHost);
+            $resolvedIp = (string) $this->resolveHostIp($cleanHost);
             $this->showIpMeta($resolvedIp, $target);
             for ($seq = 1; $seq <= 4; $seq++) {
                 $this->probeOnce($seq, $target, $cleanHost, $resolvedIp, $port);
@@ -267,6 +242,17 @@ final class LinkingApp
             App::go(function () use ($gen, $target, $cleanHost, $port) {
                 $resolvedIp = $this->resolveHostIp($cleanHost);
                 if ($this->runGeneration !== $gen) {
+                    return;
+                }
+                if ($resolvedIp === null) {
+                    $this->appendLog('ERROR', "Could not resolve {$cleanHost}");
+                    array_unshift($this->pingRecords, [
+                        'id' => $this->nextRecordId++, 'seq' => 1, 'host' => $cleanHost, 'ip' => '-', 'mode' => $this->toolType,
+                        'ttl' => $this->ttl, 'bytes' => $this->packetSize, 'ms' => null,
+                        'status' => "Could not resolve {$cleanHost}", 'ok' => false, 'time' => date('H:i:s'),
+                    ]);
+                    $this->isRunning = false;
+                    $this->window?->invalidate();
                     return;
                 }
                 $this->showIpMeta($resolvedIp, $target);
@@ -315,7 +301,7 @@ final class LinkingApp
         $results = [];
 
         if ($this->deterministicProbes) {
-            $ip = $this->resolveHostIp($cleanHost);
+            $ip = (string) $this->resolveHostIp($cleanHost);
             [$country, $isp] = $this->lookupIpMeta($ip);
             $results[] = ['ip' => $ip, 'country' => $country, 'isp' => $isp];
             if (!filter_var($cleanHost, FILTER_VALIDATE_IP)) {
@@ -328,10 +314,6 @@ final class LinkingApp
                     [$country, $isp] = $this->lookupIpMeta($ip);
                     $results[] = ['ip' => $ip, 'country' => $country, 'isp' => $isp];
                 }
-            } else {
-                $ip = $this->resolveHostIp($cleanHost);
-                [$country, $isp] = $this->lookupIpMeta($ip);
-                $results[] = ['ip' => $ip, 'country' => $country, 'isp' => $isp];
             }
         }
 
@@ -472,29 +454,24 @@ final class LinkingApp
         return [$clean, 443];
     }
 
-    private function resolveHostIp(string $host): string
+    /** The address of $host, null when it does not resolve. The deterministic probes (the tests) use a fixed table, never the network. */
+    private function resolveHostIp(string $host): ?string
     {
         if (filter_var($host, FILTER_VALIDATE_IP)) {
             return $host;
         }
-        $known = [
-            'cloudflare.com' => '104.16.132.229',
-            'cp.cloudflare.com' => '104.16.132.229',
-            'google.com' => '142.250.190.78',
-            'github.com' => '140.82.113.4',
-            'baidu.com' => '39.156.66.10',
-        ];
-        $lower = strtolower($host);
-        if (isset($known[$lower])) {
-            return $known[$lower];
+        if ($this->deterministicProbes) {
+            $known = [
+                'cloudflare.com' => '104.16.132.229',
+                'cp.cloudflare.com' => '104.16.132.229',
+                'google.com' => '142.250.190.78',
+                'github.com' => '140.82.113.4',
+                'baidu.com' => '39.156.66.10',
+            ];
+            return $known[strtolower($host)] ?? '104.21.48.1';
         }
-        if (!$this->deterministicProbes) {
-            $resolved = @gethostbyname($host);
-            if ($resolved !== $host && filter_var($resolved, FILTER_VALIDATE_IP)) {
-                return $resolved;
-            }
-        }
-        return '104.21.48.1';
+        $resolved = @gethostbyname($host);
+        return $resolved !== $host && filter_var($resolved, FILTER_VALIDATE_IP) ? $resolved : null;
     }
 
     /** @return array{0: string, 1: string} */
@@ -512,7 +489,7 @@ final class LinkingApp
         if (str_starts_with($ip, '140.82.')) {
             return ['US', 'GitHub, Inc. (AS36459)'];
         }
-        return ['SG', 'Asia-Pacific Direct Transit'];
+        return ['-', '-']; // no database here knows it: nothing is shown, not a guess
     }
 
     // --- 8-Metric Statistics (Exact match to agc_raven) ---

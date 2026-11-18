@@ -10,6 +10,13 @@ $errRed = Color::rgb(0xDC2626);
 
 $updateShown = fn(): bool => $this->isInAppUpdateAllowed() && $this->updateVersion !== '' && in_array($this->updateStatus, ['available', 'downloading', 'installing', 'failed'], true);
 
+$quickTargets = [
+    ['host' => '1.1.1.1', 'mode' => 'Ping'],
+    ['host' => '8.8.8.8', 'mode' => 'Ping'],
+    ['host' => 'cloudflare.com', 'mode' => 'Ping'],
+    ['host' => 'github.com:443', 'mode' => 'Tcping'],
+];
+
 $pingView = fn() => ListView()(
     Section(
         header: 'Diagnostic Target',
@@ -23,28 +30,31 @@ $pingView = fn() => ListView()(
         Picker('DNS', selection: $this->selectedDns)(
             Each($this->dnsOptions)(fn(string $dns) => Text(verbatim: $dns)->tag($dns)),
         ),
-        TextField('Target Host', text: $this->hostInput, prompt: '1.1.1.1 or github.com:443')
-            ->onSubmit(fn() => $this->startPing()),
-        HStack(spacing: 10)(
-            Button($this->isRunning ? 'Stop' : 'Start', action: fn() => $this->togglePing())
-                ->buttonStyle(ButtonStyle::borderedProminent)
-                ->tint($this->isRunning ? $errRed : $accentBlue),
-            Button('NSLookup', action: fn() => $this->runNslookup())
-                ->buttonStyle(ButtonStyle::bordered),
+        HStack(alignment: VerticalAlignment::center, spacing: 12)(
+            Text('Host'),
+            TextField('Host', text: $this->hostInput, prompt: 'IP or domain, host:port')
+                ->multilineTextAlignment(TextAlignment::trailing)
+                ->textInputAutocapitalization(TextInputAutocapitalization::never)
+                ->autocorrectionDisabled()
+                ->onSubmit(fn() => $this->startPing()),
         ),
+        HStack(spacing: 0)(
+            Button($this->isRunning ? 'Stop' : 'Start', action: fn() => $this->togglePing(), systemImage: $this->isRunning ? 'stop.fill' : 'play.fill')
+                ->buttonStyle(ButtonStyle::borderedProminent)
+                ->tint($this->isRunning ? $errRed : $accentBlue)
+                ->frame(maxWidth: INF),
+        )->padding(Edge::vertical, 4)->padding(Edge::horizontal, 16),
+        Button('NSLookup', action: fn() => $this->runNslookup(), systemImage: 'magnifyingglass')
+            ->buttonStyle(ButtonStyle::borderless),
     ),
 
     Section(header: 'Quick Targets')(
-        FlowLayout(spacing: 8)(
-            Button('1.1.1.1', action: fn() => $this->probeFavorite('1.1.1.1', $this->toolType))
-                ->buttonStyle(ButtonStyle::bordered),
-            Button('8.8.8.8', action: fn() => $this->probeFavorite('8.8.8.8', $this->toolType))
-                ->buttonStyle(ButtonStyle::bordered),
-            Button('cloudflare.com', action: fn() => $this->probeFavorite('cloudflare.com', $this->toolType))
-                ->buttonStyle(ButtonStyle::bordered),
-            Button('github.com:443', action: fn() => $this->probeFavorite('github.com:443', 'Tcping'))
-                ->buttonStyle(ButtonStyle::bordered),
-        ),
+        Each($quickTargets, id: 'host')(fn(array $q) => Button(action: fn() => $this->probeFavorite($q['host'], $q['mode']), label: HStack(alignment: VerticalAlignment::center, spacing: 8)(
+            Text(verbatim: $q['host']),
+            Spacer(),
+            Text(verbatim: $q['mode'])->font(Font::caption)->foregroundStyle(Color::secondary),
+            Image(systemName: 'chevron.right')->font(Font::caption)->foregroundStyle(Color::secondary),
+        ))->buttonStyle(ButtonStyle::plain)),
     ),
 
     $this->nslookupResults !== []
