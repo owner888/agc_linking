@@ -9,7 +9,7 @@ final class LinkingApp
 
     // App version + TestFlight-style build number & Update Capsule state
     public string $currentVersion = '2.0.0';
-    public int $currentBuild = 6;
+    public int $currentBuild = 7;
     public string $packageName = 'easy.net.tool';
     public string $playStoreUrl = 'https://play.google.com/store/apps/details?id=easy.net.tool';
     public string $appStoreUrl = 'https://apps.apple.com/app/id6463097701';
@@ -912,58 +912,43 @@ final class LinkingApp
 
         if (class_exists(App::class)) {
             $url = $this->updateDownloadUrl;
-            $ver = $this->updateVersion;
-            App::go(function () use ($url, $ver) {
-                $apkPath = rtrim(sys_get_temp_dir(), '/') . "/Linking_{$ver}.apk";
-                $fp = @fopen($apkPath, 'wb');
-                if ($fp === false) {
-                    $this->updateStatus = 'failed';
-                    $this->appendLog('ERROR', "Cannot write temporary APK to {$apkPath}");
-                    return;
-                }
-                $ch = curl_init($url);
-                $lastPct = -1;
-                curl_setopt_array($ch, [
-                    CURLOPT_FILE => $fp,
-                    CURLOPT_FOLLOWLOCATION => true,
-                    CURLOPT_MAXREDIRS => 8,
-                    CURLOPT_CONNECTTIMEOUT => 20,
-                    CURLOPT_TIMEOUT => 300,
-                    CURLOPT_SSL_VERIFYPEER => false,
-                    CURLOPT_NOPROGRESS => false,
-                    CURLOPT_PROGRESSFUNCTION => function ($resource, int $dlTotal, int $dlNow) use (&$lastPct): int {
-                        if ($dlTotal > 0) {
-                            $pct = (int) floor(($dlNow / $dlTotal) * 20) * 5;
-                            if ($pct !== $lastPct) {
-                                $lastPct = $pct;
-                                $this->updateProgress = min(0.99, $dlNow / $dlTotal);
-                            }
+            if (App::isAndroid()) {
+                try {
+                    $cls = \MyPHP\Native\Jni::cls('com.owner888.myphp.MyphpActivity');
+                    \MyPHP\Native\Jni::callStatic($cls, 'startApkUpgrade', '(Ljava/lang/String;)V', $url);
+                    $poll = null;
+                    $poll = function () use (&$poll, $cls): void {
+                        if ($this->updateStatus !== 'downloading' && $this->updateStatus !== 'installing') {
+                            return;
                         }
-                        return 0;
-                    },
-                ]);
-                $ok = @curl_exec($ch);
-                $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
-                $err = curl_error($ch);
-                curl_close($ch);
-                fclose($fp);
-
-                if ($ok && $code >= 200 && $code < 400 && is_file($apkPath) && filesize($apkPath) > 1024) {
-                    $this->updateProgress = 1.0;
-                    $this->updateStatus = 'installing';
-                    $this->appendLog('INFO', "APK downloaded ({$apkPath}); invoking system installer");
-                    try {
-                        Shell::openPath($apkPath);
-                    } catch (\Throwable) {
-                        try {
-                            Shell::openExternal($url);
-                        } catch (\Throwable) {}
-                    }
-                } else {
-                    @unlink($apkPath);
-                    $this->updateStatus = 'failed';
-                    $this->appendLog('ERROR', "APK download failed (HTTP {$code}): {$err}");
+                        $p = (int) \MyPHP\Native\Jni::callStatic($cls, 'getApkUpgradeProgress', '()I');
+                        if ($p >= 0 && $p <= 100) {
+                            $this->updateStatus = 'downloading';
+                            $this->updateProgress = $p / 100.0;
+                            App::after(0.06, $poll);
+                        } elseif ($p === 101) {
+                            $this->updateProgress = 1.0;
+                            $this->updateStatus = 'installing';
+                            $this->appendLog('INFO', 'APK downloaded; system package installer launched');
+                        } elseif ($p < 0) {
+                            $this->updateStatus = 'failed';
+                            $this->appendLog('ERROR', 'APK background download failed');
+                        }
+                    };
+                    App::after(0.06, $poll);
+                    return;
+                } catch (\Throwable $e) {
+                    $this->appendLog('ERROR', 'Native APK updater fallback: ' . $e->getMessage());
                 }
+            }
+
+            // Desktop / fallback: defer out of frame build pass and open download URL
+            App::after(0.05, function () use ($url) {
+                $this->updateProgress = 1.0;
+                $this->updateStatus = 'installing';
+                try {
+                    Shell::openExternal($url);
+                } catch (\Throwable) {}
             });
         }
     }

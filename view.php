@@ -18,14 +18,14 @@ $updateCapsuleBar = fn() => $this->isInAppUpdateAllowed() && $this->updateVersio
         force: $this->updateForce,
         onAction: fn() => $this->performUpdate(),
         onDismiss: fn() => $this->skipUpdate(),
-        tint: $accentGold,
+        tint: $accentBlue,
         actionTitle: $this->updateActionButtonTitle(),
     )
+        ->padding(Edge::horizontal, 16)
+        ->padding(Edge::bottom, \MyPHP\Device::isTouch() ? 78 : 16)
     : null;
 
 $pingView = fn() => ListView()(
-    $updateCapsuleBar(),
-
     Section(
         header: 'Diagnostic Target',
         footer: "TTL {$this->ttl} · Timeout {$this->timeOut}s · {$this->packetSize}B · {$this->ipLibrary}"
@@ -113,8 +113,6 @@ $pingView = fn() => ListView()(
     ->navigationBarTitleDisplayMode(TitleDisplayMode::large);
 
 $networkView = fn() => ListView()(
-    $updateCapsuleBar(),
-
     Section(
         header: $this->vpnConnected ? 'Tunnel Connected' : 'Tunnel Ready',
         footer: "Session Traffic: {$this->sessionTraffic}"
@@ -167,8 +165,6 @@ $networkView = fn() => ListView()(
     ->navigationBarTitleDisplayMode(TitleDisplayMode::large);
 
 $favoritesView = fn() => ListView()(
-    $updateCapsuleBar(),
-
     Section(header: 'Add New Host')(
         TextField('Host or IP', text: $this->newFavHost, prompt: 'e.g. 8.8.4.4 or github.com'),
         TextField('Remark', text: $this->newFavDesc, prompt: 'Description / Remark')
@@ -218,8 +214,6 @@ $favoritesView = fn() => ListView()(
     ->navigationBarTitleDisplayMode(TitleDisplayMode::large);
 
 $settingsView = fn() => ListView()(
-    $updateCapsuleBar(),
-
     Section(header: 'Ping & Probe Configuration')(
         VStack(alignment: HorizontalAlignment::leading, spacing: 4)(
             LabeledContent('TTL', (string) $this->ttl),
@@ -276,19 +270,22 @@ $settingsView = fn() => ListView()(
     ->navigationTitle('Settings')
     ->navigationBarTitleDisplayMode(TitleDisplayMode::large);
 
-return fn() => TabView(selection: $this->tab)(
-    Tab('Home', systemImage: 'house.fill', value: 'ping')(
-        NavigationStack(path: $this->pingPath)($pingView()),
-    ),
-    Tab('Network', systemImage: 'network', value: 'network')(
-        NavigationStack(path: $this->netPath)($networkView()),
-    ),
-    Tab('Favorites', systemImage: 'star.fill', value: 'favorites')(
-        NavigationStack(path: $this->favPath)($favoritesView()),
-    ),
-    Tab('Settings', systemImage: 'gearshape.fill', value: 'settings')(
-        NavigationStack(path: $this->settingsPath)($settingsView()),
-    ),
-)
-    ->tabViewStyle(TabViewStyle::sidebarAdaptable)
-    ->tint($accentBlue);
+return fn() => ZStack(alignment: Alignment::bottom)(
+    TabView(selection: $this->tab)(
+        Tab('Home', systemImage: 'house.fill', value: 'ping')(
+            NavigationStack(path: $this->pingPath)($pingView()),
+        ),
+        Tab('Network', systemImage: 'network', value: 'network')(
+            NavigationStack(path: $this->netPath)($networkView()),
+        ),
+        Tab('Favorites', systemImage: 'star.fill', value: 'favorites')(
+            NavigationStack(path: $this->favPath)($favoritesView()),
+        ),
+        Tab('Settings', systemImage: 'gearshape.fill', value: 'settings')(
+            NavigationStack(path: $this->settingsPath)($settingsView()),
+        ),
+    )
+        ->tabViewStyle(TabViewStyle::sidebarAdaptable)
+        ->tint($accentBlue),
+    $updateCapsuleBar(),
+);
