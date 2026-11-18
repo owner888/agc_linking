@@ -77,12 +77,14 @@ $h->clickText('Reset to Default');
 $h->frame();
 same(64, $app->ttl, 'Reset to Default restored TTL to 64');
 
+// The build CI makes takes its version from the tag, so the newer one is by the app's own
+$nextVersion = "{$app->currentVersion} (" . ($app->currentBuild + 1) . ')';
 $h->clickText('Check for Updates');
 $h->frame();
 same('available', $app->updateStatus, 'Check for Updates detected newer build');
-same('2.0.0 (8)', $app->updateVersion, 'TestFlight-style version+build detected as 2.0.0 (8)');
+same($nextVersion, $app->updateVersion, "TestFlight-style version+build detected as {$nextVersion}");
 check($h->byText('Update ' . MyPHP\App::name()) !== null, 'Update Capsule is rendered with its title');
-check($h->byText('2.0.0 (8)') !== null, 'Update Capsule shows the version');
+check($h->byText($nextVersion) !== null, 'Update Capsule shows the version');
 
 $h->clickText('Update ' . MyPHP\App::name());
 $h->frame();
@@ -96,7 +98,7 @@ $app->skipUpdate();
 $h->frame();
 same('idle', $app->updateStatus, 'Skipping the update hides the Update Capsule');
 check($h->byText('Update ' . MyPHP\App::name()) === null, 'No capsule once skipped');
-same('2.0.0 (8)', $app->skippedVersion, 'Skipped version recorded as 2.0.0 (8)');
+same($nextVersion, $app->skippedVersion, "Skipped version recorded as {$nextVersion}");
 
 // 7. Test iOS App Store channel: jumps to App Store instead of downloading APK
 Device::setChannel('appstore');
