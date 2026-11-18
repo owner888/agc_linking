@@ -65,7 +65,10 @@ $h->clickText('Add Host');
 $h->frame();
 same(5, count($app->favorites), 'Added Quad9 to favorites');
 
-// 6. Switch to Settings tab and test Reset to Default & Standalone APK In-App Update Capsule
+// 6. Switch to Settings tab and test Reset to Default & Standalone DMG/APK In-App Update Capsule
+if (PHP_OS_FAMILY === 'Darwin') {
+    same('dmg', Device::channel(), 'macOS standalone build defaults to dmg channel');
+}
 Device::setChannel('apk');
 $app->tab = 'settings';
 $app->ttl = 128;

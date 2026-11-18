@@ -675,16 +675,17 @@ final class LinkingApp
     /**
      * Current distribution channel:
      * - 'play': Google Play Store build (in-app self-update disabled per Google Play policy; jumps to Play Store)
-     * - 'appstore': Apple iOS/iPadOS App Store build (jumps to App Store)
-     * - 'apk': Standalone Android APK build (in-app download + PackageInstaller self-upgrade)
-     * - 'desktop': macOS / Windows / Linux build
+     * - 'appstore': Apple App Store build (iOS, iPadOS, tvOS, visionOS, and Mac App Store; jumps to App Store)
+     * - 'dmg': Standalone macOS .dmg build (supports in-app self-update)
+     * - 'apk': Standalone Android .apk build (supports in-app APK download + PackageInstaller self-upgrade)
+     * - 'desktop': Windows / Linux standalone build
      */
     public function distributionChannel(): string
     {
         return Device::channel();
     }
 
-    /** Whether in-app update capsule & APK self-upgrade are allowed on this build. */
+    /** Whether in-app update capsule is allowed on this build (disabled on Play Store per policy). */
     public function isInAppUpdateAllowed(): bool
     {
         return !Device::isPlayStore();
@@ -768,9 +769,12 @@ final class LinkingApp
         }
         $body = trim((string) ($data['body'] ?? ''));
         $firstLine = strtok($body, "\r\n") ?: 'New version available on GitHub Releases';
-        $downloadUrl = 'https://github.com/owner888/agc_linking/releases/latest/download/Linking.apk';
+        $wantExt = $this->distributionChannel() === 'dmg' ? '.dmg' : '.apk';
+        $downloadUrl = $wantExt === '.dmg'
+            ? $this->githubReleaseUrl
+            : 'https://github.com/owner888/agc_linking/releases/latest/download/Linking.apk';
         foreach (($data['assets'] ?? []) as $asset) {
-            if (is_array($asset) && str_ends_with((string) ($asset['name'] ?? ''), '.apk')) {
+            if (is_array($asset) && str_ends_with((string) ($asset['name'] ?? ''), $wantExt)) {
                 $downloadUrl = (string) ($asset['browser_download_url'] ?? $downloadUrl);
                 break;
             }
