@@ -4,26 +4,11 @@
 declare(strict_types=1);
 
 $accentBlue = Color::rgb(0x2B65F1);
-$accentGold = Color::rgb(0xF7C35E);
 $okGreen = Color::rgb(0x16A34A);
 $warnAmber = Color::rgb(0xD97706);
 $errRed = Color::rgb(0xDC2626);
 
-$updateCapsuleBar = fn() => $this->isInAppUpdateAllowed() && $this->updateVersion !== '' && in_array($this->updateStatus, ['available', 'downloading', 'installing', 'failed'], true)
-    ? UpdateCapsule(
-        version: $this->updateVersion,
-        status: $this->updateStatus,
-        progress: $this->updateProgress,
-        notes: $this->updateNotes,
-        force: $this->updateForce,
-        onAction: fn() => $this->performUpdate(),
-        onDismiss: fn() => $this->skipUpdate(),
-        tint: $accentBlue,
-        actionTitle: $this->updateActionButtonTitle(),
-    )
-        ->padding(Edge::horizontal, 16)
-        ->padding(Edge::bottom, \MyPHP\Device::isTouch() ? 78 : 16)
-    : null;
+$updateShown = fn(): bool => $this->isInAppUpdateAllowed() && $this->updateVersion !== '' && in_array($this->updateStatus, ['available', 'downloading', 'installing', 'failed'], true);
 
 $pingView = fn() => ListView()(
     Section(
@@ -270,8 +255,8 @@ $settingsView = fn() => ListView()(
     ->navigationTitle('Settings')
     ->navigationBarTitleDisplayMode(TitleDisplayMode::large);
 
-return fn() => ZStack(alignment: Alignment::bottom)(
-    TabView(selection: $this->tab)(
+return function () use ($pingView, $networkView, $favoritesView, $settingsView, $updateShown, $accentBlue) {
+    $tabs = TabView(selection: $this->tab)(
         Tab('Home', systemImage: 'house.fill', value: 'ping')(
             NavigationStack(path: $this->pingPath)($pingView()),
         ),
@@ -286,6 +271,14 @@ return fn() => ZStack(alignment: Alignment::bottom)(
         ),
     )
         ->tabViewStyle(TabViewStyle::sidebarAdaptable)
-        ->tint($accentBlue),
-    $updateCapsuleBar(),
-);
+        ->tint($accentBlue);
+    // The update bar under the tabs, which it pushes up, as Telegram's
+    return $updateShown() ? $tabs->safeAreaInset(Edge::bottom, content: fn() => UpdateCapsule(
+        version: $this->updateVersion,
+        status: $this->updateStatus,
+        progress: $this->updateProgress,
+        onAction: fn() => $this->performUpdate(),
+        tint: $accentBlue,
+        actionTitle: $this->updateActionButtonTitle(),
+    )) : $tabs;
+};
