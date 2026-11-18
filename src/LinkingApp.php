@@ -9,7 +9,7 @@ final class LinkingApp
 
     // App version + TestFlight-style build number & Update Capsule state
     public string $currentVersion = '2.0.0';
-    public int $currentBuild = 5;
+    public int $currentBuild = 6;
     public string $packageName = 'easy.net.tool';
     public string $playStoreUrl = 'https://play.google.com/store/apps/details?id=easy.net.tool';
     public string $appStoreUrl = 'https://apps.apple.com/app/id6463097701';
