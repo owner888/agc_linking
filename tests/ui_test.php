@@ -10,6 +10,7 @@ if (!str_starts_with($framework, '/')) {
 require "$framework/tests/Headless.php";
 require __DIR__ . '/../src/Icons.php';
 require __DIR__ . '/../src/Store.php';
+require __DIR__ . '/../src/ProxyLink.php';
 require __DIR__ . '/../src/Profiles.php';
 require __DIR__ . '/../src/LinkingApp.php';
 

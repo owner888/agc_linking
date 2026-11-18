@@ -19,48 +19,12 @@ final class Profiles
      */
     public static function parseLink(string $link): ?array
     {
-        $link = trim($link);
-        if (!preg_match('#^([a-z0-9]+)://(.*)$#is', $link, $m)) {
+        $parts = ProxyLink::parse($link);
+        if ($parts === null) {
             return null;
         }
-        $scheme = strtolower($m[1]);
         $protocols = ['vless' => 'VLESS', 'trojan' => 'Trojan', 'ss' => 'Shadowsocks', 'hy2' => 'Hysteria2', 'hysteria2' => 'Hysteria2', 'tuic' => 'TUIC', 'vmess' => 'VMess'];
-        if (!isset($protocols[$scheme])) {
-            return null;
-        }
-        $protocol = $protocols[$scheme];
-        $name = '';
-        $rest = $m[2];
-        if (($hash = strpos($rest, '#')) !== false) {
-            $name = urldecode(substr($rest, $hash + 1));
-            $rest = substr($rest, 0, $hash);
-        }
-        if ($scheme === 'vmess') { // base64 of a JSON
-            $json = json_decode((string) base64_decode(strtr(explode('?', $rest)[0], '-_', '+/'), false), true);
-            if (!is_array($json) || ($json['add'] ?? '') === '' || (int) ($json['port'] ?? 0) <= 0) {
-                return null;
-            }
-            return ['name' => (string) ($json['ps'] ?? '') !== '' ? (string) $json['ps'] : "{$json['add']}:{$json['port']}", 'protocol' => $protocol, 'address' => (string) $json['add'], 'port' => (int) $json['port']];
-        }
-        $rest = explode('?', $rest)[0];
-        $rest = explode('/', $rest)[0];
-        if ($scheme === 'ss' && !str_contains($rest, '@')) { // the whole of it in base64: method:password@host:port
-            $decoded = (string) base64_decode(strtr($rest, '-_', '+/'), false);
-            $rest = $decoded;
-        }
-        $at = strrpos($rest, '@');
-        $hostPort = $at === false ? $rest : substr($rest, $at + 1);
-        if (preg_match('#^\[([^\]]+)\]:(\d+)$#', $hostPort, $h)) {
-            [$address, $port] = [$h[1], (int) $h[2]];
-        } elseif (preg_match('#^([^:]+):(\d+)$#', $hostPort, $h)) {
-            [$address, $port] = [$h[1], (int) $h[2]];
-        } else {
-            return null;
-        }
-        if ($address === '' || $port <= 0 || $port > 65535) {
-            return null;
-        }
-        return ['name' => $name !== '' ? $name : "{$address}:{$port}", 'protocol' => $protocol, 'address' => $address, 'port' => $port];
+        return ['name' => $parts['name'], 'protocol' => $protocols[$parts['scheme']], 'address' => $parts['host'], 'port' => $parts['port']];
     }
 
     /**
