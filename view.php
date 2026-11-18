@@ -324,6 +324,7 @@ $proxiesScreen = fn() => ListView()(
     ->navigationTitle('Proxies')
     ->navigationBarTitleDisplayMode(TitleDisplayMode::large)
     ->toolbar(
+        Button('Test latency', action: fn() => $this->testLatency(), systemImage: 'clock')->disabled($this->testingLatency || $this->nodes() === []),
         Menu('Sort', systemImage: 'arrow.up.arrow.down')(
             Section('Sort By')(
                 Picker('Sort By', selection: $this->proxiesSort)(
@@ -333,7 +334,6 @@ $proxiesScreen = fn() => ListView()(
                 ),
             ),
         ),
-        Button('Test latency', action: fn() => $this->testLatency(), systemImage: 'clock')->disabled($this->testingLatency || $this->nodes() === []),
     );
 
 // ---------------------------------------------------------------------------------------------------------------
