@@ -3,7 +3,7 @@
     "displayName": "Linking — 全能网络诊断与智能代理工具箱 (MyPHP)",
     "description": "对标 Linking (agc_raven) 的跨平台原生网络诊断与代理工具箱：集成 Ping / Httping / Tcping 实时探测、多 DNS 解析、IP 归属地库、节点订阅测速与规则分流管理，基于 MyPHP 原生 GPU 渲染。",
     "identifier": "easy.net.tool",
-    "version": "2.0.1",
+    "version": "2.0.2",
     "entry": "app.php",
     "out": "build",
     "framework": "../myphp",

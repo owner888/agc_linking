@@ -8,7 +8,7 @@ final class LinkingApp
     public ?Window $window = null;
 
     // App version & Update Capsule state (matches agc_toolkit UpdateCapsuleWidget & AppUpdateService)
-    public string $currentVersion = '2.0.1';
+    public string $currentVersion = '2.0.2';
     public string $packageName = 'easy.net.tool';
     public string $playStoreUrl = 'https://play.google.com/store/apps/details?id=easy.net.tool';
     public string $appStoreUrl = 'https://apps.apple.com/app/id6463097701';
@@ -17,6 +17,7 @@ final class LinkingApp
     public string $updateVersion = '';
     public string $updateNotes = '';
     public string $updateDownloadUrl = 'https://github.com/owner888/agc_linking/releases/latest/download/Linking.apk';
+    public int $updateAssetSize = 0;
     public float $updateProgress = 0.0;
     public bool $updateForce = false;
     public string $skippedVersion = '';
@@ -773,12 +774,15 @@ final class LinkingApp
         $downloadUrl = $wantExt === '.dmg'
             ? $this->githubReleaseUrl
             : 'https://github.com/owner888/agc_linking/releases/latest/download/Linking.apk';
+        $assetSize = 0;
         foreach (($data['assets'] ?? []) as $asset) {
             if (is_array($asset) && str_ends_with((string) ($asset['name'] ?? ''), $wantExt)) {
                 $downloadUrl = (string) ($asset['browser_download_url'] ?? $downloadUrl);
+                $assetSize = (int) ($asset['size'] ?? 0);
                 break;
             }
         }
+        $this->updateAssetSize = $assetSize;
 
         if (version_compare($latest, $this->currentVersion, '>')) {
             if (!$manual && $this->skippedVersion === $latest) {
