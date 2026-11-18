@@ -65,7 +65,8 @@ $h->clickText('Add Host');
 $h->frame();
 same(5, count($app->favorites), 'Added Quad9 to favorites');
 
-// 6. Switch to Settings tab and test Reset to Default & In-App Update Capsule
+// 6. Switch to Settings tab and test Reset to Default & Standalone APK In-App Update Capsule
+Device::setChannel('apk');
 $app->tab = 'settings';
 $app->ttl = 128;
 $h->frame();
