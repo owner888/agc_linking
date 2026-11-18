@@ -895,6 +895,15 @@ final class LinkingApp
         }
 
         // 3. Standalone APK / Desktop build -> in-app download & install
+        if ($this->updateStatus === 'installing' && !$this->deterministicProbes && class_exists(App::class) && App::isAndroid()) {
+            // downloaded: "Update Now" installs it again, once the permission to install is given or the installer was dismissed, as Telegram's
+            try {
+                \MyPHP\Native\Jni::callStatic('com.owner888.myphp.MyphpActivity', 'installDownloadedApk', '()V');
+            } catch (\Throwable $e) {
+                $this->appendLog('ERROR', 'Could not start the installer: ' . $e->getMessage());
+            }
+            return;
+        }
         if ($this->updateVersion === '' || $this->updateStatus === 'downloading' || $this->updateStatus === 'installing') {
             return;
         }
