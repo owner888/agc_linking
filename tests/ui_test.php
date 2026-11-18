@@ -81,20 +81,21 @@ $h->clickText('Check for Updates');
 $h->frame();
 same('available', $app->updateStatus, 'Check for Updates detected newer build');
 same('2.0.0 (8)', $app->updateVersion, 'TestFlight-style version+build detected as 2.0.0 (8)');
-check($h->byText('Update Available') !== null, 'Update Capsule banner is rendered');
-check($h->byText('UPDATE') !== null, 'UPDATE action pill is rendered');
+check($h->byText('Update Linking') !== null, 'Update Capsule is rendered with its title');
+check($h->byText('2.0.0 (8)') !== null, 'Update Capsule shows the version');
 
-$h->clickText('UPDATE');
+$h->clickText('Update Linking');
 $h->frame();
-same('installing', $app->updateStatus, 'Clicking UPDATE downloaded and entered installing state');
-check($h->byText('Installing...') !== null, 'Update Capsule displays Installing...');
+same('installing', $app->updateStatus, 'Tapping the capsule downloaded and entered installing state');
+check($h->byText('Update Now') !== null, 'Update Capsule displays Update Now');
 
 // Test dismissing / skipping update capsule
 $app->simulateUpdateAvailable();
 $h->frame();
-$h->clickText('✕');
+$app->skipUpdate();
 $h->frame();
-same('idle', $app->updateStatus, 'Clicking dismiss ✕ hides the Update Capsule');
+same('idle', $app->updateStatus, 'Skipping the update hides the Update Capsule');
+check($h->byText('Update Linking') === null, 'No capsule once skipped');
 same('2.0.0 (8)', $app->skippedVersion, 'Skipped version recorded as 2.0.0 (8)');
 
 // 7. Test iOS App Store channel: jumps to App Store instead of downloading APK
@@ -103,10 +104,10 @@ $app->skippedVersion = '';
 $app->checkUpdate(true);
 $h->frame();
 same('available', $app->updateStatus, 'App Store channel shows update notification');
-check($h->byText('APP STORE') !== null, 'App Store channel displays APP STORE button');
-$h->clickText('APP STORE');
+check($h->byText('Update on the App Store') !== null, 'App Store channel names the store in the capsule');
+$h->clickText('Update on the App Store');
 $h->frame();
-same($app->appStoreUrl, $app->lastOpenedExternalUrl, 'Clicking APP STORE jumps to Apple App Store URL');
+same($app->appStoreUrl, $app->lastOpenedExternalUrl, 'Tapping the capsule jumps to Apple App Store URL');
 
 // 8. Test Google Play Store channel: in-app update capsule completely removed/disabled!
 Device::setChannel('play');

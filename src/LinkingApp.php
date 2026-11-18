@@ -733,9 +733,9 @@ final class LinkingApp
     public function updateActionButtonTitle(): string
     {
         return match ($this->distributionChannel()) {
-            'appstore' => 'APP STORE',
-            'play' => 'PLAY STORE',
-            default => 'UPDATE',
+            'appstore' => 'Update on the App Store',
+            'play' => 'Update on Google Play',
+            default => 'Update Linking',
         };
     }
 
