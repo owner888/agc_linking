@@ -8,6 +8,9 @@ if (!str_starts_with($framework, '/')) {
     $framework = dirname(__DIR__) . '/' . $framework;
 }
 require "$framework/tests/Headless.php";
+require __DIR__ . '/../src/Icons.php';
+require __DIR__ . '/../src/Store.php';
+require __DIR__ . '/../src/Profiles.php';
 require __DIR__ . '/../src/LinkingApp.php';
 
 use MyPHP\Device;
@@ -16,21 +19,77 @@ use MyPHP\UI\Content;
 use function MyPHP\Tests\{check, same};
 
 $app = new LinkingApp(deterministicProbes: true);
-$h = new Headless(Content::file(__DIR__ . '/../view.php', $app)->view, 1120, 740);
+$h = new Headless(Content::file(__DIR__ . '/../view.php', $app)->view, 402, 874);
 $h->rt->strict = true;
+$h->rt->touch = true; // a phone: its tab bar across the bottom
+$h->theme = \MyPHP\UI\Theme::phone(false);
+// A sheet comes and goes in a quarter of a second of the clock: what closes one lets it go before it looks
+$settle = function () use ($h): void { $h->frame(3); usleep(450_000); $h->frame(3); };
 $h->frame();
 
-// 1. Default Ping Tools tab renders the statistics, with nothing measured yet: no sample data
-check($h->byText('Network Diagnostics') !== null, 'Ping Tools header renders');
+// 1. Home is the connection, with nothing to connect to yet: no sample data of any kind
+check($h->byText('NetWork') !== null, 'Home title renders');
+check($h->byText('Tap To Connect') !== null, 'Connection button says Tap To Connect');
+check($h->byText('Home') !== null && $h->byText('Proxies') !== null, 'Two tabs, Home and Proxies');
+same([], $app->profiles, 'No profile before one is added');
+same('disconnected', $app->connection, 'Disconnected at first');
 same(0, $app->sentCount(), 'No probes before the first Start');
 same('-', $app->ipCountry, 'No country before a target is probed');
-check($h->byText('No Probe Data Yet') !== null, 'Empty state shows until a probe is made');
-check($h->byText('Start') !== null, 'Start button renders');
 
-// 2. Switch tool mode to Tcping and run deterministic probe
-$h->clickText('Tcping');
+// 2. Asking to connect with no profile asks for one
+$app->toggleConnection();
 $h->frame();
-same('Tcping', $app->toolType, 'Switched to Tcping mode');
+same(true, $app->addProfileOpen, 'Connecting with no profile opens Add Profile');
+check($h->byText('Add Profile') !== null, 'Add Profile sheet renders');
+
+// 3. A link of a proxy becomes a profile; one that is not is refused
+$app->profileInput = 'not a link';
+$app->addProfile();
+check($app->profileError !== '', 'A text that is no link is refused');
+same([], $app->profiles, 'Nothing added for it');
+$app->profileInput = 'vless://11111111-2222-3333-4444-555555555555@edge.example.com:443?type=ws#Frankfurt';
+$app->addProfile();
+$settle();
+same(1, count($app->profiles), 'A link is a profile');
+same('Frankfurt', $app->profiles[0]['name'], 'The profile is named after the link');
+same('VLESS', $app->profiles[0]['nodes'][0]['protocol'], 'The proxy is a VLESS');
+same('edge.example.com', $app->profiles[0]['nodes'][0]['address'], 'The proxy has its address');
+same(false, $app->addProfileOpen, 'The sheet closes once it is added');
+same($app->profiles[0]['id'], $app->activeProfileId, 'The new profile is the active one');
+check($h->byText('Frankfurt') !== null, 'Home shows the active profile');
+
+// 4. The engine is not in this build: no connection is faked
+$app->toggleConnection();
+$h->frame();
+same(true, $app->engineAlertOpen, 'Connecting says the engine is not in this build');
+same('disconnected', $app->connection, 'No connection is made');
+$app->engineAlertOpen = false;
+$settle();
+
+// 5. Proxies lists the active profile's proxies, none measured yet
+$app->tab = 'proxies';
+$h->frame();
+check($h->byText('Frankfurt') !== null || $h->byText('Frankfurt (1)') !== null, 'Proxies shows the profile');
+check($h->byText('VLESS · edge.example.com:443') !== null, 'Proxies shows the proxy');
+check($h->byText('-') !== null, 'An untested proxy has no latency');
+$app->tab = 'home';
+$settle();
+
+// 6. What agc_raven's drawer held are tabs: the bar of a phone has four and More, which lists the others
+foreach (['Home', 'Proxies', 'Ping', 'Httping', 'More'] as $label) {
+    check($h->byLabel($label) !== null, "The bar has {$label}");
+}
+check($h->byLabel('Tcping') === null && $h->byLabel('Setting') === null, 'The others are not in the bar');
+$h->clickOn($h->byLabel('More'));
+$settle();
+foreach (['Tcping', 'Config Options', 'Log', 'Setting'] as $row) {
+    check($h->byText($row) !== null, "More lists {$row}");
+}
+$app->go('tcping'); // the row's tap, which a headless window cannot always reach
+$settle();
+same('tcping', $app->tab, 'Tcping opens the ping tool');
+same('Tcping', $app->toolType, 'in Tcping mode');
+check($h->byText('No Probe Data Yet') !== null, 'Empty state shows until a probe is made');
 
 $app->hostInput = 'github.com:443';
 $h->clickText('Start');
@@ -38,7 +97,6 @@ $h->frame();
 same(4, $app->sentCount(), 'Tcping deterministic probe generated 4 packets');
 same('US', $app->ipCountry, 'GitHub IP country resolved to US');
 
-// 3. Test NSLookup drawer
 $h->clickText('NSLookup');
 $h->frame();
 check(count($app->nslookupResults) >= 1, 'NSLookup populated DNS A records');
@@ -50,41 +108,56 @@ same('8.8.8.8', $app->hostInput, 'A quick target fills the host');
 same(4, $app->sentCount(), 'A quick target starts probing');
 same('Ping', $app->toolType, 'A quick target keeps its mode');
 
-// 4. Switch to Network tab and test VPN connect & node import
-$app->tab = 'network';
+// 7. Favorites are a sheet of the ping tool
+$app->favoritesOpen = true;
 $h->frame();
-check($h->byText('Tunnel Ready') !== null, 'Network tab renders Tunnel Ready state');
-
-$h->clickText('Connect Tunnel');
-$h->frame();
-same(true, $app->vpnConnected, 'Tunnel connected after clicking Connect Tunnel');
-check($h->byText('Tunnel Connected') !== null, 'Header updated to Tunnel Connected');
-
-$app->nodeImportInput = 'hysteria2://tokyo-edge.linking.net:8443';
-$h->clickText('Import Profile');
-$h->frame();
-same(5, count($app->proxyNodes), 'Imported new Hysteria2 proxy node');
-
-// 5. Switch to Favorites tab and add a new favorite host
-$app->tab = 'favorites';
-$h->frame();
+check($h->byText('Saved Hosts (4)') !== null, 'Favorites list the saved hosts');
 $app->newFavHost = '9.9.9.9';
 $app->newFavDesc = 'Quad9 Security DNS';
-$h->clickText('Add Host');
+$app->addFavorite(); // the row's tap, which a headless window cannot reach inside a sheet
 $h->frame();
 same(5, count($app->favorites), 'Added Quad9 to favorites');
+$app->favoritesOpen = false;
+$settle();
+
+// 8. What was set is kept: a second app on the same file finds it
+$file = sys_get_temp_dir() . '/linking-test-' . bin2hex(random_bytes(4)) . '.json';
+$first = new LinkingApp(deterministicProbes: true, store: new Store($file));
+$first->profileInput = 'trojan://pw@1.2.3.4:8443#Tokyo';
+$first->addProfile();
+$first->newFavHost = '4.4.4.4';
+$first->addFavorite();
+$first->ttl = 99;
+$first->save();
+$second = new LinkingApp(deterministicProbes: true, store: new Store($file));
+same(1, count($second->profiles), 'A profile is kept between runs');
+same('Tokyo', $second->activeProfile()['name'] ?? '', 'The active profile is kept');
+same('Trojan', $second->activeProfile()['nodes'][0]['protocol'] ?? '', 'with its proxies');
+check(in_array('4.4.4.4', array_column($second->favorites, 'host'), true), 'A favorite is kept');
+same(99, $second->ttl, 'A setting is kept');
+@unlink($file);
+
+// 9. What a link says
+same(['name' => 'T', 'protocol' => 'Trojan', 'address' => '1.2.3.4', 'port' => 8443], Profiles::parseLink('trojan://pw@1.2.3.4:8443#T'), 'trojan link');
+same('Shadowsocks', Profiles::parseLink('ss://' . base64_encode('aes-256-gcm:pw@host.com:8388') . '#S')['protocol'] ?? '', 'ss link in base64');
+same('v.com', Profiles::parseLink('vmess://' . base64_encode(json_encode(['ps' => 'V', 'add' => 'v.com', 'port' => '443'])))['address'] ?? '', 'vmess link');
+same(null, Profiles::parseLink('http://example.com'), 'a web address is not a link of a proxy');
+same(2, count(Profiles::parseSubscription(base64_encode("vless://u@a.com:443#A\nhy2://p@b.com:8443#B\nnonsense"))), 'a subscription in base64');
+same(true, Profiles::isSubscriptionUrl('https://example.com/sub'), 'a subscription address');
 
 // 6. Switch to Settings tab and test Reset to Default & Standalone DMG/APK In-App Update Capsule
 if (PHP_OS_FAMILY === 'Darwin') {
     same('dmg', Device::channel(), 'macOS standalone build defaults to dmg channel');
 }
 Device::setChannel('apk');
-$app->tab = 'settings';
 $app->ttl = 128;
+$app->go('config');
 $h->frame();
 $h->clickText('Reset to Default');
 $h->frame();
 same(64, $app->ttl, 'Reset to Default restored TTL to 64');
+$app->go('settings');
+$h->frame();
 
 // The build CI makes takes its version from the tag, so the newer one is by the app's own
 $nextVersion = "{$app->currentVersion} (" . ($app->currentBuild + 1) . ')';
@@ -126,7 +199,6 @@ $app->checkUpdate(false);
 $h->frame();
 same('idle', $app->updateStatus, 'Play Store channel disables automatic in-app update check');
 check($h->byText('Check for Updates') === null, 'Play Store channel hides Check for Updates button');
-check($h->byText('Preview Update Capsule') === null, 'Play Store channel hides Preview Update Capsule button');
 $app->performUpdate();
 same($app->playStoreUrl, $app->lastOpenedExternalUrl, 'Play Store performUpdate redirects to Google Play Store URL');
 Device::setChannel(null);

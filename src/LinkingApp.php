@@ -25,12 +25,18 @@ final class LinkingApp
     public string $skippedVersion = '';
     public string $lastOpenedExternalUrl = '';
 
-    // Navigation tab: 'network' | 'ping' | 'favorites' | 'settings'
-    public string $tab = 'ping';
-    public \NavigationPath $pingPath;
-    public \NavigationPath $netPath;
-    public \NavigationPath $favPath;
-    public \NavigationPath $settingsPath;
+    // The tab shown: 'home' | 'proxies' | 'ping' | 'httping' | 'tcping' | 'config' | 'logs' | 'settings'. The drawer of
+    // agc_raven is the tabs: the bar of a phone has the first four and More, a sidebar has them all.
+    public string $tab = 'home';
+    public \NavigationPath $homePath;
+    public \NavigationPath $proxiesPath;
+
+    // Sheets
+    public bool $addProfileOpen = false;
+    public bool $quickSettingsOpen = false;
+    public bool $favoritesOpen = false;
+    public bool $engineAlertOpen = false;
+    public bool $removeProfileAsked = false;
 
     // Tool mode: 'Ping' | 'Httping' | 'Tcping'
     public string $toolType = 'Ping';
@@ -94,31 +100,28 @@ final class LinkingApp
     public array $history = [];
     private int $nextHistId = 1;
 
-    // Smart Network / Proxy state (Hiddify replacement)
-    public bool $vpnConnected = false;
+    // Profiles: what a person added (a link of one proxy, or a subscription) and the proxies in it
+    /** @var list<array{id: int, name: string, source: string, kind: string, nodes: list<array{id: int, name: string, protocol: string, address: string, port: int, latency: ?int}>}> */
+    public array $profiles = [];
+    public int $activeProfileId = 0;
+    public int $selectedNodeId = 0;
+    private int $nextProfileId = 1;
+    private int $nextNodeId = 1;
+    public string $profileInput = '';
+    public string $profileError = '';
+    public bool $profileBusy = false;
+    public bool $testingLatency = false;
+    public string $proxiesSort = 'default'; // 'default' | 'latency' | 'name'
+
+    // The connection: 'disconnected' | 'connecting' | 'connected'. The engine that makes it is not in this build.
+    public string $connection = 'disconnected';
+    public string $upSpeed = '0B/s';
+    public string $downSpeed = '0B/s';
+
     public string $routingMode = 'Rule'; // 'Rule' | 'Global' | 'Direct'
-    public int $activeNodeId = 1;
-    public string $nodeImportInput = '';
-    public string $upSpeed = '0 KB/s';
-    public string $downSpeed = '0 KB/s';
-    public string $sessionTraffic = '128.4 MB';
     public bool $tunEnabled = true;
     public bool $ipv6Enabled = false;
     public int $mixedPort = 7890;
-
-    /**
-     * @var list<array{
-     *   id: int,
-     *   name: string,
-     *   protocol: string,
-     *   address: string,
-     *   port: int,
-     *   region: string,
-     *   latency: int
-     * }>
-     */
-    public array $proxyNodes = [];
-    private int $nextNodeId = 1;
 
     /** @var list<array{id: int, time: string, level: string, message: string}> */
     public array $logs = [];
@@ -127,7 +130,7 @@ final class LinkingApp
     // When true (e.g. in headless tests or preview), probes complete synchronously with deterministic metrics
     public bool $deterministicProbes = false;
 
-    public function __construct(bool $deterministicProbes = false)
+    public function __construct(bool $deterministicProbes = false, private readonly ?Store $store = null)
     {
         $this->deterministicProbes = $deterministicProbes;
         $cfgPath = dirname(__DIR__) . '/myphp.json';
@@ -141,11 +144,10 @@ final class LinkingApp
                 }
             }
         }
-        $this->pingPath = new \NavigationPath();
-        $this->netPath = new \NavigationPath();
-        $this->favPath = new \NavigationPath();
-        $this->settingsPath = new \NavigationPath();
+        $this->homePath = new \NavigationPath();
+        $this->proxiesPath = new \NavigationPath();
         $this->seedDefaults();
+        $this->restore();
     }
 
     private function seedDefaults(): void
@@ -157,16 +159,7 @@ final class LinkingApp
             ['id' => $this->nextFavId++, 'host' => '223.5.5.5', 'description' => 'AliDNS Public Resolver', 'tag' => 'CN'],
         ];
 
-        $this->proxyNodes = [
-            ['id' => $this->nextNodeId++, 'name' => 'SG-01 · Singapore Premium', 'protocol' => 'VLESS-Vision', 'address' => 'sg1.linking.edge', 'port' => 443, 'region' => 'SG', 'latency' => 36],
-            ['id' => $this->nextNodeId++, 'name' => 'JP-02 · Tokyo IIJ Direct', 'protocol' => 'Hysteria2', 'address' => 'jp2.linking.edge', 'port' => 8443, 'region' => 'JP', 'latency' => 48],
-            ['id' => $this->nextNodeId++, 'name' => 'HK-01 · Hong Kong BGP', 'protocol' => 'Trojan-TLS', 'address' => 'hk1.linking.edge', 'port' => 443, 'region' => 'HK', 'latency' => 19],
-            ['id' => $this->nextNodeId++, 'name' => 'US-01 · Los Angeles CN2', 'protocol' => 'VLESS-Reality', 'address' => 'us1.linking.edge', 'port' => 443, 'region' => 'US', 'latency' => 142],
-        ];
-        $this->activeNodeId = 3; // HK-01
-
-        $this->appendLog('INFO', 'Linking v2.0 (MyPHP GPU Native) initialized');
-        $this->appendLog('INFO', 'Loaded 4 favorite hosts and 4 outbound proxy profiles');
+        $this->appendLog('INFO', 'Linking started');
     }
 
     public function appendLog(string $level, string $message): void
@@ -580,6 +573,7 @@ final class LinkingApp
         $this->newFavHost = '';
         $this->newFavDesc = '';
         $this->appendLog('INFO', "Added favorite host: {$host}");
+        $this->save();
     }
 
     public function removeFavorite(int $id): void
@@ -588,23 +582,16 @@ final class LinkingApp
             $this->favorites,
             fn(array $f) => $f['id'] !== $id
         ));
+        $this->save();
     }
 
     public function probeFavorite(string $host, string $mode = 'Ping'): void
     {
         $this->toolType = $mode;
         $this->hostInput = $host;
+        $this->favoritesOpen = false;
         $this->startPing();
-        if ($this->deterministicProbes || !class_exists(App::class)) {
-            $this->tab = 'ping';
-            return;
-        }
-        // The tap is handled while the TabView builds its page, which then writes its own tab back into $this->tab:
-        // the change is made on the next turn of the run loop, which the tab bar follows.
-        App::later(function (): void {
-            $this->tab = 'ping';
-            $this->window?->invalidate();
-        });
+        $this->go(self::toolTab($mode));
     }
 
     private function recordHistory(string $host, string $mode): void
@@ -619,89 +606,288 @@ final class LinkingApp
             'mode' => $mode,
             'time' => date('H:i:s'),
         ]);
+        $this->save();
     }
 
     public function clearHistory(): void
     {
         $this->history = [];
         $this->appendLog('INFO', 'Cleared diagnostic history');
+        $this->save();
     }
 
     // --- Smart Network / Proxy Actions ---
 
-    public function toggleVpn(): void
+    public function toggleConnection(): void
     {
-        $this->vpnConnected = !$this->vpnConnected;
-        $node = $this->activeNode();
-        if ($this->vpnConnected) {
-            $this->upSpeed = '42.8 KB/s';
-            $this->downSpeed = '1.84 MB/s';
-            $this->appendLog('INFO', "Tunnel connected -> {$node['name']} ({$node['protocol']}, {$this->routingMode} mode)");
-        } else {
-            $this->upSpeed = '0 KB/s';
-            $this->downSpeed = '0 KB/s';
-            $this->appendLog('INFO', 'Tunnel disconnected');
+        if ($this->activeProfile() === null) { // nothing to connect to: add a profile first
+            $this->openAddProfile();
+            return;
         }
+        if ($this->connection !== 'disconnected') {
+            $this->connection = 'disconnected';
+            $this->upSpeed = $this->downSpeed = '0B/s';
+            return;
+        }
+        // The engine that makes a connection is not part of this build: say so, and make none.
+        $this->engineAlertOpen = true;
+        $this->appendLog('WARNING', 'A connection was asked for; this build has no connection engine');
     }
 
-    /** @return array{id: int, name: string, protocol: string, address: string, port: int, region: string, latency: int} */
-    public function activeNode(): array
+    public function connectionLabel(): string
     {
-        foreach ($this->proxyNodes as $node) {
-            if ($node['id'] === $this->activeNodeId) {
-                return $node;
+        return match ($this->connection) {
+            'connecting' => 'Connecting',
+            'connected' => 'Connected',
+            default => 'Tap To Connect',
+        };
+    }
+
+    // --- Profiles and their proxies ---
+
+    /** @return ?array{id: int, name: string, source: string, kind: string, nodes: list<array{id: int, name: string, protocol: string, address: string, port: int, latency: ?int}>} */
+    public function activeProfile(): ?array
+    {
+        foreach ($this->profiles as $profile) {
+            if ($profile['id'] === $this->activeProfileId) {
+                return $profile;
             }
         }
-        return $this->proxyNodes[0];
+        return null;
+    }
+
+    /** The proxies of the active profile, sorted as the Proxies page says. @return list<array{id: int, name: string, protocol: string, address: string, port: int, latency: ?int}> */
+    public function nodes(): array
+    {
+        $nodes = $this->activeProfile()['nodes'] ?? [];
+        if ($this->proxiesSort === 'name') {
+            usort($nodes, fn(array $a, array $b) => strcasecmp($a['name'], $b['name']));
+        } elseif ($this->proxiesSort === 'latency') { // the untested last, the unreachable after the reachable
+            usort($nodes, fn(array $a, array $b) => self::latencyRank($a['latency']) <=> self::latencyRank($b['latency']));
+        }
+        return $nodes;
+    }
+
+    private static function latencyRank(?int $ms): int
+    {
+        return $ms === null ? PHP_INT_MAX : ($ms < 0 ? PHP_INT_MAX - 1 : $ms);
+    }
+
+    public function latencyText(?int $ms): string
+    {
+        return $ms === null ? '-' : ($ms < 0 ? 'Timeout' : "{$ms} ms");
+    }
+
+    public function openAddProfile(): void
+    {
+        $this->profileInput = '';
+        $this->profileError = '';
+        $this->addProfileOpen = true;
+    }
+
+    /** Adds what was pasted: a link of one proxy at once, a subscription's address once it is fetched. */
+    public function addProfile(): void
+    {
+        $text = trim($this->profileInput);
+        if ($text === '' || $this->profileBusy) {
+            return;
+        }
+        $this->profileError = '';
+        if (!Profiles::isSubscriptionUrl($text)) {
+            $node = Profiles::parseLink($text);
+            if ($node === null) {
+                $this->profileError = 'This is not a link of a proxy or the address of a subscription.';
+                return;
+            }
+            $this->storeProfile($node['name'], $text, 'link', [$node]);
+            return;
+        }
+        if ($this->deterministicProbes || !class_exists(App::class)) {
+            $this->profileError = 'A subscription cannot be fetched here.';
+            return;
+        }
+        $this->profileBusy = true;
+        App::go(function () use ($text): void {
+            try {
+                $req = new URLRequest($text, 'GET', ['User-Agent' => 'Linking/' . $this->currentVersion], null, 20.0);
+                [$body, $response] = URLSession::shared()->data($req);
+                $nodes = $response->statusCode >= 200 && $response->statusCode < 300 ? Profiles::parseSubscription($body) : [];
+                if ($nodes === []) {
+                    $this->profileError = $response->statusCode >= 200 && $response->statusCode < 300
+                        ? 'No proxy was found in the subscription.'
+                        : "The subscription answered {$response->statusCode}.";
+                } else {
+                    $title = (string) $response->value('profile-title');
+                    if (str_starts_with($title, 'base64:')) {
+                        $title = (string) base64_decode(substr($title, 7), false);
+                    }
+                    $this->storeProfile($title !== '' ? $title : (string) (parse_url($text, PHP_URL_HOST) ?: $text), $text, 'subscription', $nodes);
+                }
+            } catch (\Throwable $e) {
+                $this->profileError = 'The subscription could not be fetched: ' . $e->getMessage();
+            } finally {
+                $this->profileBusy = false;
+                $this->window?->invalidate();
+            }
+        });
+    }
+
+    /** @param list<array{name: string, protocol: string, address: string, port: int}> $nodes */
+    private function storeProfile(string $name, string $source, string $kind, array $nodes): void
+    {
+        $id = $this->nextProfileId++;
+        $this->profiles[] = [
+            'id' => $id,
+            'name' => $name,
+            'source' => $source,
+            'kind' => $kind,
+            'nodes' => array_map(fn(array $n) => $n + ['id' => $this->nextNodeId++, 'latency' => null], $nodes),
+        ];
+        $this->selectProfile($id);
+        $this->addProfileOpen = false;
+        $this->profileInput = '';
+        $this->appendLog('INFO', "Added profile {$name} (" . count($nodes) . ' proxies)');
+        $this->save();
+    }
+
+    public function selectProfile(int $id): void
+    {
+        $this->activeProfileId = $id;
+        $first = $this->activeProfile()['nodes'][0]['id'] ?? 0;
+        $this->selectedNodeId = $first;
+        $this->save();
+    }
+
+    public function removeActiveProfile(): void
+    {
+        $this->profiles = array_values(array_filter($this->profiles, fn(array $p) => $p['id'] !== $this->activeProfileId));
+        $this->activeProfileId = 0;
+        $this->selectedNodeId = 0;
+        if ($this->profiles !== []) {
+            $this->selectProfile($this->profiles[0]['id']);
+        }
+        $this->save();
     }
 
     public function selectNode(int $id): void
     {
-        $this->activeNodeId = $id;
-        $node = $this->activeNode();
-        $this->appendLog('INFO', "Selected proxy node: {$node['name']} ({$node['latency']} ms)");
+        $this->selectedNodeId = $id;
+        $this->save();
     }
 
-    public function testAllNodesLatency(): void
+    public function selectedNode(): ?array
     {
-        foreach ($this->proxyNodes as $idx => $node) {
-            $delta = (($idx * 5) % 9) - 4;
-            $this->proxyNodes[$idx]['latency'] = max(12, $node['latency'] + $delta);
+        foreach ($this->activeProfile()['nodes'] ?? [] as $node) {
+            if ($node['id'] === $this->selectedNodeId) {
+                return $node;
+            }
         }
-        $this->appendLog('INFO', 'Completed URLTest / TCP latency check for all proxy nodes');
+        return null;
     }
 
-    public function importNodeUri(): void
+    /** Measures how long a TCP connection to each proxy of the active profile takes, one after the other. */
+    public function testLatency(): void
     {
-        $raw = trim($this->nodeImportInput);
-        if ($raw === '') {
+        if ($this->testingLatency || $this->activeProfile() === null || $this->deterministicProbes || !class_exists(App::class)) {
             return;
         }
-        $protocol = 'VLESS';
-        if (str_starts_with(strtolower($raw), 'trojan://')) {
-            $protocol = 'Trojan-TLS';
-        } elseif (str_starts_with(strtolower($raw), 'hysteria2://') || str_starts_with(strtolower($raw), 'hy2://')) {
-            $protocol = 'Hysteria2';
-        } elseif (str_starts_with(strtolower($raw), 'ss://')) {
-            $protocol = 'Shadowsocks';
-        } elseif (str_starts_with(strtolower($raw), 'http')) {
-            $protocol = 'Subscription';
+        $this->testingLatency = true;
+        $profileId = $this->activeProfileId;
+        foreach ($this->profiles as $pi => $profile) {
+            if ($profile['id'] === $profileId) {
+                foreach ($profile['nodes'] as $ni => $_) {
+                    $this->profiles[$pi]['nodes'][$ni]['latency'] = null;
+                }
+            }
         }
+        App::go(function () use ($profileId): void {
+            try {
+                foreach ($this->profiles as $pi => $profile) {
+                    if ($profile['id'] !== $profileId) {
+                        continue;
+                    }
+                    foreach ($profile['nodes'] as $ni => $node) {
+                        $ms = $this->tcpConnectMs($node['address'], $node['port']);
+                        $this->profiles[$pi]['nodes'][$ni]['latency'] = $ms ?? -1;
+                        $this->window?->invalidate();
+                    }
+                }
+            } finally {
+                $this->testingLatency = false;
+                $this->appendLog('INFO', 'Measured the latency of the proxies');
+                $this->save();
+                $this->window?->invalidate();
+            }
+        });
+    }
 
-        $name = 'Custom · ' . substr(preg_replace('#^[a-z0-9]+://#i', '', $raw) ?? $raw, 0, 22);
-        $newId = $this->nextNodeId++;
-        $this->proxyNodes[] = [
-            'id' => $newId,
-            'name' => $name,
-            'protocol' => $protocol,
-            'address' => 'edge.linking.custom',
-            'port' => 443,
-            'region' => 'GLOBAL',
-            'latency' => 31,
-        ];
-        $this->activeNodeId = $newId;
-        $this->nodeImportInput = '';
-        $this->appendLog('INFO', "Imported {$protocol} profile: {$name}");
+    // --- Where the menu goes ---
+
+    /** Shows the tab $tab. */
+    public function go(string $tab): void
+    {
+        $this->tab = $tab;
+    }
+
+    /** The tab of a tool: Ping, Httping or Tcping. */
+    public static function toolTab(string $mode): string
+    {
+        return strtolower($mode);
+    }
+
+    /** The mode of a tool's tab, null for the other tabs. */
+    public static function toolOfTab(string $tab): ?string
+    {
+        return match ($tab) { 'ping' => 'Ping', 'httping' => 'Httping', 'tcping' => 'Tcping', default => null };
+    }
+
+    // --- What is kept between runs ---
+
+    private function restore(): void
+    {
+        $data = $this->store?->load() ?? [];
+        if ($data === []) {
+            return;
+        }
+        $this->favorites = is_array($data['favorites'] ?? null) ? $data['favorites'] : $this->favorites;
+        $this->history = is_array($data['history'] ?? null) ? $data['history'] : [];
+        $this->profiles = is_array($data['profiles'] ?? null) ? $data['profiles'] : [];
+        $this->activeProfileId = (int) ($data['activeProfileId'] ?? 0);
+        $this->selectedNodeId = (int) ($data['selectedNodeId'] ?? 0);
+        foreach (['ttl', 'timeOut', 'interval', 'packetSize', 'mixedPort'] as $key) {
+            if (isset($data[$key])) { $this->$key = (int) $data[$key]; }
+        }
+        foreach (['ipLibrary', 'routingMode', 'skippedVersion', 'selectedDns', 'toolType', 'hostInput'] as $key) {
+            if (isset($data[$key]) && is_string($data[$key])) { $this->$key = $data[$key]; }
+        }
+        foreach (['tunEnabled', 'ipv6Enabled'] as $key) {
+            if (isset($data[$key])) { $this->$key = (bool) $data[$key]; }
+        }
+        $this->nextFavId = max(array_column($this->favorites, 'id') ?: [0]) + 1;
+        $this->nextHistId = max(array_column($this->history, 'id') ?: [0]) + 1;
+        $this->nextProfileId = max(array_column($this->profiles, 'id') ?: [0]) + 1;
+        $ids = [0];
+        foreach ($this->profiles as $profile) {
+            foreach ($profile['nodes'] as $node) {
+                $ids[] = $node['id'];
+            }
+        }
+        $this->nextNodeId = max($ids) + 1;
+    }
+
+    public function save(): void
+    {
+        $this->store?->save([
+            'favorites' => $this->favorites,
+            'history' => $this->history,
+            'profiles' => $this->profiles,
+            'activeProfileId' => $this->activeProfileId,
+            'selectedNodeId' => $this->selectedNodeId,
+            'ttl' => $this->ttl, 'timeOut' => $this->timeOut, 'interval' => $this->interval, 'packetSize' => $this->packetSize,
+            'mixedPort' => $this->mixedPort, 'ipLibrary' => $this->ipLibrary, 'routingMode' => $this->routingMode,
+            'skippedVersion' => $this->skippedVersion, 'selectedDns' => $this->selectedDns, 'toolType' => $this->toolType,
+            'hostInput' => $this->hostInput, 'tunEnabled' => $this->tunEnabled, 'ipv6Enabled' => $this->ipv6Enabled,
+        ]);
     }
 
     // --- Channel-Aware Update Actions (App Store / Play Store / Standalone APK) ---
@@ -1019,5 +1205,6 @@ final class LinkingApp
         $this->packetSize = 64;
         $this->ipLibrary = 'IP_2LOCATION';
         $this->appendLog('INFO', 'Reset Ping configuration to default values (TTL=64, Timeout=5s, Interval=1s, PacketSize=64B)');
+        $this->save();
     }
 }
