@@ -1,11 +1,21 @@
 <?php
 declare(strict_types=1);
 
-use MyPHP\{App, URLRequest, URLSession, Window};
+use MyPHP\{App, Shell, URLRequest, URLSession, Window};
 
 final class LinkingApp
 {
     public ?Window $window = null;
+
+    // App version & Update Capsule state (matches agc_toolkit UpdateCapsuleWidget)
+    public string $currentVersion = '2.0.0';
+    public string $updateStatus = 'idle'; // 'idle' | 'checking' | 'available' | 'downloading' | 'installing' | 'failed'
+    public string $updateVersion = '';
+    public string $updateNotes = '';
+    public string $updateDownloadUrl = 'https://github.com/owner888/agc_linking/releases/latest/download/Linking.apk';
+    public float $updateProgress = 0.0;
+    public bool $updateForce = false;
+    public string $skippedVersion = '';
 
     // Navigation tab: 'network' | 'ping' | 'favorites' | 'settings'
     public string $tab = 'ping';
@@ -108,6 +118,13 @@ final class LinkingApp
     public function __construct(bool $deterministicProbes = false)
     {
         $this->deterministicProbes = $deterministicProbes;
+        $cfgPath = dirname(__DIR__) . '/myphp.json';
+        if (is_file($cfgPath)) {
+            $cfg = json_decode((string) file_get_contents($cfgPath), true);
+            if (is_array($cfg) && !empty($cfg['version'])) {
+                $this->currentVersion = (string) $cfg['version'];
+            }
+        }
         $this->seedDefaults();
     }
 
@@ -646,6 +663,187 @@ final class LinkingApp
         $this->activeNodeId = $newId;
         $this->nodeImportInput = '';
         $this->appendLog('INFO', "Imported {$protocol} profile: {$name}");
+    }
+
+    // --- In-App Update Capsule Actions (GitHub Releases) ---
+
+    public function checkUpdate(bool $manual = false): void
+    {
+        if ($this->updateStatus === 'downloading' || $this->updateStatus === 'installing') {
+            return;
+        }
+        $this->updateStatus = 'checking';
+        if ($manual) {
+            $this->appendLog('INFO', "Checking GitHub Releases (owner888/agc_linking) for updates (current v{$this->currentVersion})...");
+        }
+
+        if ($this->deterministicProbes) {
+            $this->applyReleasePayload([
+                'tag_name' => 'v2.1.0',
+                'body' => 'Native GPU UpdateCapsule & faster multi-DNS probing',
+                'assets' => [
+                    [
+                        'name' => 'Linking.apk',
+                        'browser_download_url' => 'https://github.com/owner888/agc_linking/releases/latest/download/Linking.apk',
+                    ],
+                ],
+            ], $manual);
+            return;
+        }
+
+        if (class_exists(App::class)) {
+            App::go(function () use ($manual) {
+                try {
+                    $req = new URLRequest(
+                        'https://api.github.com/repos/owner888/agc_linking/releases/latest',
+                        headers: ['Accept' => 'application/vnd.github+json', 'User-Agent' => 'Linking-MyPHP/' . $this->currentVersion]
+                    );
+                    $data = URLSession::shared()->json($req);
+                    if (is_array($data)) {
+                        $this->applyReleasePayload($data, $manual);
+                    } else {
+                        $this->updateStatus = 'idle';
+                    }
+                } catch (\Throwable $e) {
+                    $this->updateStatus = 'idle';
+                    if ($manual) {
+                        $this->appendLog('ERROR', 'Update check failed: ' . $e->getMessage());
+                    }
+                }
+            });
+        }
+    }
+
+    /** @param array<string, mixed> $data */
+    private function applyReleasePayload(array $data, bool $manual): void
+    {
+        $tag = (string) ($data['tag_name'] ?? '');
+        $latest = ltrim($tag, 'vV');
+        if ($latest === '') {
+            $this->updateStatus = 'idle';
+            return;
+        }
+        $body = trim((string) ($data['body'] ?? ''));
+        $firstLine = strtok($body, "\r\n") ?: 'New version available on GitHub Releases';
+        $downloadUrl = 'https://github.com/owner888/agc_linking/releases/latest/download/Linking.apk';
+        foreach (($data['assets'] ?? []) as $asset) {
+            if (is_array($asset) && str_ends_with((string) ($asset['name'] ?? ''), '.apk')) {
+                $downloadUrl = (string) ($asset['browser_download_url'] ?? $downloadUrl);
+                break;
+            }
+        }
+
+        if (version_compare($latest, $this->currentVersion, '>')) {
+            if (!$manual && $this->skippedVersion === $latest) {
+                $this->updateStatus = 'idle';
+                return;
+            }
+            $this->updateVersion = $latest;
+            $this->updateNotes = $firstLine;
+            $this->updateDownloadUrl = $downloadUrl;
+            $this->updateProgress = 0.0;
+            $this->updateStatus = 'available';
+            $this->appendLog('INFO', "New version available: v{$latest} ({$firstLine})");
+        } else {
+            $this->updateStatus = 'idle';
+            if ($manual) {
+                $this->appendLog('INFO', "Already up to date (v{$this->currentVersion})");
+            }
+        }
+    }
+
+    public function simulateUpdateAvailable(): void
+    {
+        $this->updateVersion = '2.1.0';
+        $this->updateNotes = 'Telegram-style Update Capsule & instant APK self-upgrade';
+        $this->updateDownloadUrl = 'https://github.com/owner888/agc_linking/releases/latest/download/Linking.apk';
+        $this->updateProgress = 0.0;
+        $this->updateStatus = 'available';
+        $this->appendLog('INFO', 'Update capsule activated: v2.1.0 ready to install');
+    }
+
+    public function performUpdate(): void
+    {
+        if ($this->updateVersion === '' || $this->updateStatus === 'downloading' || $this->updateStatus === 'installing') {
+            return;
+        }
+        $this->updateStatus = 'downloading';
+        $this->updateProgress = 0.0;
+        $this->appendLog('INFO', "Downloading update v{$this->updateVersion} from {$this->updateDownloadUrl}...");
+
+        if ($this->deterministicProbes) {
+            $this->updateProgress = 1.0;
+            $this->updateStatus = 'installing';
+            $this->appendLog('INFO', "Update v{$this->updateVersion} downloaded; launching system package installer");
+            return;
+        }
+
+        if (class_exists(App::class)) {
+            $url = $this->updateDownloadUrl;
+            $ver = $this->updateVersion;
+            App::go(function () use ($url, $ver) {
+                $apkPath = rtrim(sys_get_temp_dir(), '/') . "/Linking_{$ver}.apk";
+                $fp = @fopen($apkPath, 'wb');
+                if ($fp === false) {
+                    $this->updateStatus = 'failed';
+                    $this->appendLog('ERROR', "Cannot write temporary APK to {$apkPath}");
+                    return;
+                }
+                $ch = curl_init($url);
+                $lastPct = -1;
+                curl_setopt_array($ch, [
+                    CURLOPT_FILE => $fp,
+                    CURLOPT_FOLLOWLOCATION => true,
+                    CURLOPT_MAXREDIRS => 8,
+                    CURLOPT_CONNECTTIMEOUT => 20,
+                    CURLOPT_TIMEOUT => 300,
+                    CURLOPT_SSL_VERIFYPEER => false,
+                    CURLOPT_NOPROGRESS => false,
+                    CURLOPT_PROGRESSFUNCTION => function ($resource, int $dlTotal, int $dlNow) use (&$lastPct): int {
+                        if ($dlTotal > 0) {
+                            $pct = (int) floor(($dlNow / $dlTotal) * 20) * 5;
+                            if ($pct !== $lastPct) {
+                                $lastPct = $pct;
+                                $this->updateProgress = min(0.99, $dlNow / $dlTotal);
+                            }
+                        }
+                        return 0;
+                    },
+                ]);
+                $ok = @curl_exec($ch);
+                $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
+                $err = curl_error($ch);
+                curl_close($ch);
+                fclose($fp);
+
+                if ($ok && $code >= 200 && $code < 400 && is_file($apkPath) && filesize($apkPath) > 1024) {
+                    $this->updateProgress = 1.0;
+                    $this->updateStatus = 'installing';
+                    $this->appendLog('INFO', "APK downloaded ({$apkPath}); invoking system installer");
+                    try {
+                        Shell::openPath($apkPath);
+                    } catch (\Throwable) {
+                        try {
+                            Shell::openExternal($url);
+                        } catch (\Throwable) {}
+                    }
+                } else {
+                    @unlink($apkPath);
+                    $this->updateStatus = 'failed';
+                    $this->appendLog('ERROR', "APK download failed (HTTP {$code}): {$err}");
+                }
+            });
+        }
+    }
+
+    public function skipUpdate(): void
+    {
+        if ($this->updateVersion !== '') {
+            $this->skippedVersion = $this->updateVersion;
+            $this->appendLog('INFO', "Skipped update v{$this->skippedVersion}");
+        }
+        $this->updateStatus = 'idle';
+        $this->updateVersion = '';
     }
 
     // --- Settings Actions ---

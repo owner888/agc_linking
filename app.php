@@ -19,5 +19,6 @@ App::whenReady(function () use ($app) {
         stateKey: 'main',
         content: Content::file(__DIR__ . '/view.php', $app),
     ));
+    $app->checkUpdate(false);
 });
 App::run();

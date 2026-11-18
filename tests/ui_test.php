@@ -64,13 +64,32 @@ $h->clickText('Add Host');
 $h->frame();
 same(5, count($app->favorites), 'Added Quad9 to favorites');
 
-// 6. Switch to Settings tab and test Reset to Default
+// 6. Switch to Settings tab and test Reset to Default & In-App Update Capsule
 $app->tab = 'settings';
 $app->ttl = 128;
 $h->frame();
 $h->clickText('Reset to Default');
 $h->frame();
 same(64, $app->ttl, 'Reset to Default restored TTL to 64');
+
+$h->clickText('Check for Updates');
+$h->frame();
+same('available', $app->updateStatus, 'Check for Updates detected v2.1.0');
+check($h->byText('Update Available') !== null, 'Update Capsule banner is rendered');
+check($h->byText('UPDATE') !== null, 'UPDATE action pill is rendered');
+
+$h->clickText('UPDATE');
+$h->frame();
+same('installing', $app->updateStatus, 'Clicking UPDATE downloaded and entered installing state');
+check($h->byText('Installing...') !== null, 'Update Capsule displays Installing...');
+
+// Test dismissing / skipping update capsule
+$app->simulateUpdateAvailable();
+$h->frame();
+$h->clickText('✕');
+$h->frame();
+same('idle', $app->updateStatus, 'Clicking dismiss ✕ hides the Update Capsule');
+same('2.1.0', $app->skippedVersion, 'Skipped version recorded as 2.1.0');
 
 echo "All Linking headless UI tests passed!\n";
 exit(empty($GLOBALS['failures']) ? 0 : 1);

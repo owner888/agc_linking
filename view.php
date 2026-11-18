@@ -9,6 +9,17 @@ $okGreen = Color::rgb(0x16A34A);
 $warnAmber = Color::rgb(0xD97706);
 $errRed = Color::rgb(0xDC2626);
 
+$updateCapsuleBar = fn() => UpdateCapsule(
+    version: $this->updateVersion,
+    status: $this->updateStatus,
+    progress: $this->updateProgress,
+    notes: $this->updateNotes,
+    force: $this->updateForce,
+    onAction: fn() => $this->performUpdate(),
+    onDismiss: fn() => $this->skipUpdate(),
+    tint: $accentGold,
+);
+
 $statCard = fn(string $label, string $value, ?string $sub = null) => VStack(alignment: HorizontalAlignment::leading, spacing: 4)(
     Text($label)->font(Font::caption)->foregroundStyle(Color::secondary),
     Text(verbatim: $value)->font(Font::headline),
@@ -21,6 +32,8 @@ $statCard = fn(string $label, string $value, ?string $sub = null) => VStack(alig
 
 $pingView = fn() => ScrollView(Axis::vertical)(
     VStack(alignment: HorizontalAlignment::leading, spacing: 14)(
+        $updateCapsuleBar(),
+
         // Top Header + Mode Switcher
         HStack(alignment: VerticalAlignment::center, spacing: 12)(
             VStack(alignment: HorizontalAlignment::leading, spacing: 2)(
@@ -161,6 +174,8 @@ $pingView = fn() => ScrollView(Axis::vertical)(
 
 $networkView = fn() => ScrollView(Axis::vertical)(
     VStack(alignment: HorizontalAlignment::leading, spacing: 16)(
+        $updateCapsuleBar(),
+
         // Connection Hero Card
         VStack(alignment: HorizontalAlignment::leading, spacing: 12)(
             HStack(alignment: VerticalAlignment::center, spacing: 12)(
@@ -260,6 +275,7 @@ $networkView = fn() => ScrollView(Axis::vertical)(
 
 $favoritesView = fn() => ScrollView(Axis::vertical)(
     VStack(alignment: HorizontalAlignment::leading, spacing: 16)(
+        $updateCapsuleBar(),
         Text('Favorites & Probe History')->font(Font::title2),
 
         // Add New Favorite Host Card
@@ -343,9 +359,20 @@ $favoritesView = fn() => ScrollView(Axis::vertical)(
 
 $settingsView = fn() => ScrollView(Axis::vertical)(
     VStack(alignment: HorizontalAlignment::leading, spacing: 16)(
+        $updateCapsuleBar(),
+
         HStack(alignment: VerticalAlignment::center, spacing: 12)(
-            Text('Settings & Diagnostic Logs')->font(Font::title2),
+            VStack(alignment: HorizontalAlignment::leading, spacing: 2)(
+                Text('Settings & Diagnostic Logs')->font(Font::title2),
+                Text(verbatim: "Linking v{$this->currentVersion} · Package easy.net.tool")
+                    ->font(Font::caption)
+                    ->foregroundStyle(Color::secondary),
+            ),
             Spacer(),
+            Button('Check for Updates', action: fn() => $this->checkUpdate(true))
+                ->buttonStyle(ButtonStyle::borderedProminent),
+            Button('Preview Update Capsule', action: fn() => $this->simulateUpdateAvailable())
+                ->buttonStyle(ButtonStyle::bordered),
             Button('Reset to Default', action: fn() => $this->resetConfig())
                 ->buttonStyle(ButtonStyle::bordered),
         ),
