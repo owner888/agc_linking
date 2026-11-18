@@ -8,7 +8,7 @@ final class LinkingApp
     public ?Window $window = null;
 
     // App version & Update Capsule state (matches agc_toolkit UpdateCapsuleWidget & AppUpdateService)
-    public string $currentVersion = '2.0.3';
+    public string $currentVersion = '2.0.4';
     public string $packageName = 'easy.net.tool';
     public string $playStoreUrl = 'https://play.google.com/store/apps/details?id=easy.net.tool';
     public string $appStoreUrl = 'https://apps.apple.com/app/id6463097701';

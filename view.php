@@ -277,7 +277,7 @@ $settingsView = fn() => ListView()(
     ->navigationBarTitleDisplayMode(TitleDisplayMode::large);
 
 return fn() => TabView(selection: $this->tab)(
-    Tab('Ping Tools', systemImage: 'waveform.path.ecg', value: 'ping')(
+    Tab('Home', systemImage: 'house.fill', value: 'ping')(
         NavigationStack(path: $this->pingPath)($pingView()),
     ),
     Tab('Network', systemImage: 'network', value: 'network')(
