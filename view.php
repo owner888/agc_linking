@@ -52,7 +52,7 @@ $profilePicker = function () use ($icon): mixed {
     }
     return HStack(spacing: 0)(
         Menu($title)(...$items),
-    )->padding(Edge::horizontal, 16)->padding(Edge::top, 4);
+    )->padding(Edge::horizontal, 16)->padding(Edge::top, 20);
 };
 
 $connectionButton = function () use ($ringIdle, $okGreen, $warnAmber): mixed {
