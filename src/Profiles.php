@@ -44,6 +44,8 @@ final class Profiles
             $text = implode("\n", ClashSubscription::links($text));
         } elseif (SingBoxSubscription::isSingBox($text)) { // sing-box's JSON, the same
             $text = implode("\n", SingBoxSubscription::links($text));
+        } elseif (SurgeSubscription::isSurge($text)) { // a Surge or Shadowrocket configuration's [Proxy] lines
+            $text = implode("\n", SurgeSubscription::links($text));
         }
         $nodes = [];
         foreach (preg_split('/\R/', $text) ?: [] as $line) {

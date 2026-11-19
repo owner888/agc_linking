@@ -4,7 +4,7 @@ declare(strict_types=1);
 /**
  * A link of one proxy split into its parts, in the spellings that are met: vless://uuid@host:port?…#name, the same
  * with its user and host in base64 (Shadowrocket's vless://base64(none:uuid@host:port)?remarks=…), ss:// with all of
- * it in base64 or only its user, vmess:// as the base64 of a JSON.
+ * it in base64 or only its user, vmess:// as the base64 of a JSON or Shadowrocket's base64 of method:uuid@host:port.
  */
 final class ProxyLink
 {
@@ -36,15 +36,8 @@ final class ProxyLink
         }
         $rest = rtrim($rest, '/');
 
-        if ($scheme === 'vmess') { // the base64 of a JSON
-            $json = json_decode((string) self::base64($rest), true);
-            if (!is_array($json) || ($json['add'] ?? '') === '' || (int) ($json['port'] ?? 0) <= 0) {
-                return null;
-            }
-            $host = (string) $json['add'];
-            $port = (int) $json['port'];
-            return ['scheme' => $scheme, 'user' => (string) ($json['id'] ?? ''), 'password' => '', 'host' => $host, 'port' => $port, 'query' => $query,
-                'name' => (string) ($json['ps'] ?? '') !== '' ? (string) $json['ps'] : "$host:$port", 'json' => $json];
+        if ($scheme === 'vmess') {
+            return self::vmess($rest, $query);
         }
         if (!str_contains($rest, '@')) { // all of it in base64
             $decoded = self::base64($rest);
@@ -78,6 +71,40 @@ final class ProxyLink
         }
         return ['scheme' => $scheme, 'user' => $user, 'password' => $password, 'host' => $host, 'port' => $port, 'query' => $query,
             'name' => $name !== '' ? $name : "$host:$port", 'json' => []];
+    }
+
+    /**
+     * vmess:// in its two spellings: the base64 of a JSON (v2rayN's), or Shadowrocket's, the base64 of
+     * method:uuid@host:port with the rest in the query (remarks, obfs, obfsParam, path, tls, peer, alterId).
+     * Either way the answer carries the JSON a v2rayN link would, which is what an outbound is made from.
+     * @param array<string, string> $query
+     * @return array{scheme: string, user: string, password: string, host: string, port: int, query: array<string, string>, name: string, json: array<string, mixed>}|null
+     */
+    private static function vmess(string $rest, array $query): ?array
+    {
+        $decoded = self::base64($rest);
+        $json = json_decode((string) $decoded, true);
+        if (!is_array($json)) {
+            if ($decoded === null || preg_match('/^(?:([^:@]*):)?([^:@]+)@(\[[^\]]+\]|[^:\/]+):(\d+)$/', $decoded, $m) !== 1) {
+                return null;
+            }
+            $net = match (strtolower($query['obfs'] ?? '')) {
+                'websocket', 'ws' => 'ws', 'grpc' => 'grpc', 'h2', 'http2' => 'h2', 'httpupgrade' => 'httpupgrade', 'xhttp', 'splithttp' => 'xhttp', default => 'tcp',
+            };
+            $json = array_filter([
+                'v' => '2', 'ps' => $query['remarks'] ?? $query['remark'] ?? '', 'add' => trim($m[3], '[]'), 'port' => $m[4], 'id' => $m[2],
+                'aid' => $query['alterId'] ?? $query['aid'] ?? '0', 'scy' => $m[1] !== '' ? $m[1] : 'auto', 'net' => $net,
+                'host' => $query['obfsParam'] ?? $query['host'] ?? '', 'path' => $query['path'] ?? '',
+                'tls' => ($query['tls'] ?? '') === '1' || ($query['tls'] ?? '') === 'true' ? 'tls' : '', 'sni' => $query['peer'] ?? $query['sni'] ?? '',
+            ], static fn($v) => $v !== '');
+        }
+        if (($json['add'] ?? '') === '' || (int) ($json['port'] ?? 0) <= 0) {
+            return null;
+        }
+        $host = (string) $json['add'];
+        $port = (int) $json['port'];
+        return ['scheme' => 'vmess', 'user' => (string) ($json['id'] ?? ''), 'password' => '', 'host' => $host, 'port' => $port, 'query' => $query,
+            'name' => (string) ($json['ps'] ?? '') !== '' ? (string) $json['ps'] : "$host:$port", 'json' => $json];
     }
 
     private static function base64(string $text): ?string
