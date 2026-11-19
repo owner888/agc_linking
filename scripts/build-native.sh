@@ -7,7 +7,8 @@ set -euo pipefail
 
 XRAY_VERSION="v26.11.9"
 HEV_VERSION="2.20.0"
-ABIS="${ABIS:-arm64-v8a armeabi-v7a}"
+# 64-bit only: MyPHP has no 32-bit runtime (its integers are 64-bit), so an armeabi-v7a library would never be packaged.
+ABIS="${ABIS:-arm64-v8a}"
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 OUT="${ROOT}/android/jniLibs"
