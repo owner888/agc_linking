@@ -149,6 +149,16 @@ same(null, Profiles::parseLink('http://example.com'), 'a web address is not a li
 same(2, count(Profiles::parseSubscription(base64_encode("vless://u@a.com:443#A\nhy2://p@b.com:8443#B\nnonsense"))), 'a subscription in base64');
 same(true, Profiles::isSubscriptionUrl('https://example.com/sub'), 'a subscription address');
 
+// 5b. Choosing another proxy ends a connection that is up; the same one leaves it alone
+$app->profiles[0]['nodes'][] = ['id' => 99, 'name' => 'Other', 'protocol' => 'VLESS', 'address' => 'other.example.com', 'port' => 443, 'latency' => null, 'link' => 'vless://u@other.example.com:443#Other'];
+$app->connection = 'connected';
+$app->selectNode($app->selectedNodeId);
+same('connected', $app->connection, 'The proxy already in use: nothing changes');
+$app->selectNode(99);
+same('disconnected', $app->connection, 'Another proxy ends the connection');
+same(99, $app->selectedNodeId, 'and is the one chosen');
+$app->selectNode($app->profiles[0]['nodes'][0]['id']);
+
 // 6. Switch to Settings tab and test Reset to Default & Standalone DMG/APK In-App Update Capsule
 if (PHP_OS_FAMILY === 'Darwin') {
     same('dmg', Device::channel(), 'macOS standalone build defaults to dmg channel');

@@ -930,38 +930,15 @@ final class LinkingApp
         $this->save();
     }
 
-    /** Takes a proxy; a connection that is up goes over to it, as Shadowrocket's does when another configuration is chosen. */
+    /** Takes a proxy; a connection that is up is ended, the person connects again over the new one. */
     public function selectNode(int $id): void
     {
         $changed = $id !== $this->selectedNodeId;
         $this->selectedNodeId = $id;
         $this->save();
         if ($changed && $this->connection !== 'disconnected') {
-            $this->reconnect();
+            $this->disconnect();
         }
-    }
-
-    /** Ends the connection and makes it again over the selected proxy; the system's permission is held, so no dialog. */
-    private function reconnect(): void
-    {
-        $this->disconnect();
-        $this->connection = 'connecting';
-        $this->vpnAskedAt = microtime(true);
-        $gen = ++$this->vpnWatchGen;
-        $tries = 0;
-        $retry = null;
-        $retry = function () use (&$retry, $gen, &$tries): void {
-            if ($gen !== $this->vpnWatchGen) {
-                return;
-            }
-            if (Vpn::state() === Vpn::STOPPED || ++$tries > 25) { // the service is down (or not going to say so): up again
-                $this->connection = 'disconnected';
-                $this->toggleConnection();
-                return;
-            }
-            App::after(0.2, $retry);
-        };
-        App::after(0.2, $retry);
     }
 
     public function selectedNode(): ?array
