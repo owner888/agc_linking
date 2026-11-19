@@ -1,0 +1,17 @@
+<service
+    android:name="easy.net.tool.vpn.LinkingVpnService"
+    android:process=":service"
+    android:exported="false"
+    android:permission="android.permission.BIND_VPN_SERVICE"
+    android:foregroundServiceType="specialUse">
+    <intent-filter>
+        <action android:name="android.net.VpnService" />
+    </intent-filter>
+    <property
+        android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+        android:value="vpn" />
+</service>
+<activity
+    android:name="easy.net.tool.vpn.VpnLauncherActivity"
+    android:exported="false"
+    android:theme="@android:style/Theme.Translucent.NoTitleBar" />

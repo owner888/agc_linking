@@ -3,3 +3,5 @@
 /.myphp/
 /vendor/
 .DS_Store
+/android/jniLibs/
+/.native/
