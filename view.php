@@ -75,6 +75,7 @@ $networkScreen = fn() => VStack(spacing: 0)(
             Text('↑ ' . $this->upSpeed)->font(Font::subheadline)->foregroundStyle($upGreen),
             Text('↓ ' . $this->downSpeed)->font(Font::subheadline)->foregroundStyle($downRed),
         )->frame(maxWidth: INF),
+        $this->trafficDetail !== '' ? Text($this->trafficDetail)->font(Font::caption)->foregroundStyle(Color::secondary) : EmptyView(),
     )->frame(maxWidth: INF),
     Spacer(),
     Spacer(),
@@ -479,7 +480,7 @@ return function () use ($networkPage, $pingPage, $configScreenPage, $logsScreenP
         ->sheet($this->addProfileOpen, content: $addProfileSheet)
         ->sheet($this->quickSettingsOpen, content: $quickSettingsSheet)
         ->sheet($this->favoritesOpen, content: $favoritesSheet)
-        ->alert('Not available yet', $this->engineAlertOpen, [Button('OK')], 'The connection engine is not part of this build, so no connection is made.')
+        ->alert('Not available yet', $this->engineAlertOpen, [Button('OK')], $this->engineAlertMessage)
         ->confirmationDialog('Skip version ' . $this->updateVersion . '?', $this->skipUpdateAsked, [
             Button('Skip This Version', action: fn() => $this->skipUpdate()),
             Button('Cancel', role: ButtonRole::cancel),

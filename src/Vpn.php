@@ -74,4 +74,22 @@ final class Vpn
         }
         return $t;
     }
+
+    /** A rate for the screen: 0B/s, 512B/s, 1.2KB/s, 3.4MB/s. */
+    public static function formatSpeed(float $bytesPerSecond): string
+    {
+        return self::formatBytes($bytesPerSecond) . '/s';
+    }
+
+    /** An amount of bytes for the screen: 0B, 512B, 1.2KB, 3.4MB, 1.5GB. */
+    public static function formatBytes(float $bytes): string
+    {
+        foreach (['B' => 1024, 'KB' => 1024 ** 2, 'MB' => 1024 ** 3] as $unit => $limit) {
+            if ($bytes < $limit) {
+                $divisor = $limit / 1024;
+                return $unit === 'B' ? (int) $bytes . 'B' : number_format($bytes / $divisor, 1, '.', '') . $unit;
+            }
+        }
+        return number_format($bytes / 1024 ** 3, 1, '.', '') . 'GB';
+    }
 }

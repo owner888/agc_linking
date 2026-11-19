@@ -15,7 +15,7 @@ final class Profiles
 
     /**
      * The proxy a link names, null when it is not one this reads.
-     * @return array{name: string, protocol: string, address: string, port: int}|null
+     * @return array{name: string, protocol: string, address: string, port: int, link: string}|null
      */
     public static function parseLink(string $link): ?array
     {
@@ -24,12 +24,12 @@ final class Profiles
             return null;
         }
         $protocols = ['vless' => 'VLESS', 'trojan' => 'Trojan', 'ss' => 'Shadowsocks', 'hy2' => 'Hysteria2', 'hysteria2' => 'Hysteria2', 'tuic' => 'TUIC', 'vmess' => 'VMess'];
-        return ['name' => $parts['name'], 'protocol' => $protocols[$parts['scheme']], 'address' => $parts['host'], 'port' => $parts['port']];
+        return ['name' => $parts['name'], 'protocol' => $protocols[$parts['scheme']], 'address' => $parts['host'], 'port' => $parts['port'], 'link' => trim($link)];
     }
 
     /**
      * The proxies a subscription's answer holds: its lines, which are links, or all of it in base64.
-     * @return list<array{name: string, protocol: string, address: string, port: int}>
+     * @return list<array{name: string, protocol: string, address: string, port: int, link: string}>
      */
     public static function parseSubscription(string $body): array
     {

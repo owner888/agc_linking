@@ -29,7 +29,7 @@ $b = rtrim(base64_encode("none:$uuid@203.0.113.7:443"), '=');
 $link = "vless://$b?remarks=Node-A&tls=1&peer=www.example.org&udp=1&xtls=2&pbk=KEY&sid=ab12&fingerprint=chrome";
 $p = ProxyLink::parse($link);
 same(['203.0.113.7', 443, $uuid, 'Node-A'], [$p['host'], $p['port'], $p['user'], $p['name']], 'base64 vless: host, port, id, name');
-same(['name' => 'Node-A', 'protocol' => 'VLESS', 'address' => '203.0.113.7', 'port' => 443], Profiles::parseLink($link), 'base64 vless as a profile');
+same(['name' => 'Node-A', 'protocol' => 'VLESS', 'address' => '203.0.113.7', 'port' => 443, 'link' => $link], Profiles::parseLink($link), 'base64 vless as a profile');
 $o = XrayConfig::outbound($link);
 same('reality', $o['streamSettings']['security'], 'pbk means reality');
 same('www.example.org', $o['streamSettings']['realitySettings']['serverName'], 'peer is the server name');

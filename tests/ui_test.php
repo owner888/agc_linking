@@ -12,6 +12,8 @@ require __DIR__ . '/../src/Icons.php';
 require __DIR__ . '/../src/Store.php';
 require __DIR__ . '/../src/ProxyLink.php';
 require __DIR__ . '/../src/Profiles.php';
+require __DIR__ . '/../src/XrayConfig.php';
+require __DIR__ . '/../src/Vpn.php';
 require __DIR__ . '/../src/LinkingApp.php';
 
 use MyPHP\Device;
@@ -59,10 +61,11 @@ same(false, $app->addProfileOpen, 'The sheet closes once it is added');
 same($app->profiles[0]['id'], $app->activeProfileId, 'The new profile is the active one');
 check($h->byText('Frankfurt') !== null, 'Home shows the active profile');
 
-// 4. The engine is not in this build: no connection is faked
+// 4. Off Android there is no VPN: no connection is faked, and it says so
 $app->toggleConnection();
 $h->frame();
-same(true, $app->engineAlertOpen, 'Connecting says the engine is not in this build');
+same(true, $app->engineAlertOpen, 'Connecting says it is the Android app that connects');
+same('A connection is made by the Android app only.', $app->engineAlertMessage, 'The alert says why');
 same('disconnected', $app->connection, 'No connection is made');
 $app->engineAlertOpen = false;
 $settle();
@@ -139,7 +142,7 @@ same(99, $second->ttl, 'A setting is kept');
 @unlink($file);
 
 // 9. What a link says
-same(['name' => 'T', 'protocol' => 'Trojan', 'address' => '1.2.3.4', 'port' => 8443], Profiles::parseLink('trojan://pw@1.2.3.4:8443#T'), 'trojan link');
+same(['name' => 'T', 'protocol' => 'Trojan', 'address' => '1.2.3.4', 'port' => 8443, 'link' => 'trojan://pw@1.2.3.4:8443#T'], Profiles::parseLink('trojan://pw@1.2.3.4:8443#T'), 'trojan link');
 same('Shadowsocks', Profiles::parseLink('ss://' . base64_encode('aes-256-gcm:pw@host.com:8388') . '#S')['protocol'] ?? '', 'ss link in base64');
 same('v.com', Profiles::parseLink('vmess://' . base64_encode(json_encode(['ps' => 'V', 'add' => 'v.com', 'port' => '443'])))['address'] ?? '', 'vmess link');
 same(null, Profiles::parseLink('http://example.com'), 'a web address is not a link of a proxy');

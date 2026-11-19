@@ -36,6 +36,7 @@ final class LinkingApp
     public bool $quickSettingsOpen = false;
     public bool $favoritesOpen = false;
     public bool $engineAlertOpen = false;
+    public string $engineAlertMessage = '';
     public bool $removeProfileAsked = false;
     public bool $skipUpdateAsked = false;
 
@@ -114,10 +115,18 @@ final class LinkingApp
     public bool $testingLatency = false;
     public string $proxiesSort = 'default'; // 'default' | 'latency' | 'name'
 
-    // The connection: 'disconnected' | 'connecting' | 'connected'. The engine that makes it is not in this build.
+    // The connection: 'disconnected' | 'connecting' | 'connected'. Made by the VPN service of the Android app (Vpn).
     public string $connection = 'disconnected';
     public string $upSpeed = '0B/s';
     public string $downSpeed = '0B/s';
+    public string $trafficDetail = ''; // proxy and direct traffic since it connected, with $detailedTraffic
+    private int $vpnWatchGen = 0;
+    private float $vpnAskedAt = 0.0;
+    private ?array $lastTraffic = null;
+    private float $lastTrafficAt = 0.0;
+    private const SOCKS_PORT = 10808;
+    private const API_PORT = 10085;
+    private const CONNECT_TIMEOUT = 45.0; // the permission dialog may take a while; a start that shows nothing after this is given up
 
     public string $routingMode = 'Rule'; // 'Rule' | 'Global' | 'Direct'
     public bool $tunEnabled = true;
@@ -627,13 +636,157 @@ final class LinkingApp
             return;
         }
         if ($this->connection !== 'disconnected') {
-            $this->connection = 'disconnected';
-            $this->upSpeed = $this->downSpeed = '0B/s';
+            $this->disconnect();
             return;
         }
-        // The engine that makes a connection is not part of this build: say so, and make none.
+        if (!Vpn::available()) {
+            $this->refuseConnection('A connection is made by the Android app only.');
+            return;
+        }
+        $node = $this->selectedNode();
+        if ($node !== null && !isset($node['link'])) { // a profile kept by an earlier version, which did not keep the link
+            $this->refuseConnection('This profile was added by an earlier version: remove it and add it again.');
+            return;
+        }
+        $config = $node === null ? null : XrayConfig::build($node['link'] ?? '', $this->routingMode, self::SOCKS_PORT, self::API_PORT);
+        if ($node === null || $config === null) {
+            $this->refuseConnection(($node['protocol'] ?? 'This') . ' proxies are not supported yet.');
+            return;
+        }
+        try {
+            Vpn::start($config, self::SOCKS_PORT, self::API_PORT, $this->detailedTraffic, 'Linking', $node['name'], 'Disconnect');
+        } catch (\Throwable $e) {
+            $this->refuseConnection('The connection could not be started: ' . $e->getMessage());
+            return;
+        }
+        $this->connection = 'connecting';
+        $this->vpnAskedAt = microtime(true);
+        $this->appendLog('INFO', "Connecting through {$node['name']} ({$this->routingMode})");
+        $this->watchVpn();
+    }
+
+    public function disconnect(): void
+    {
+        $this->vpnWatchGen++;
+        if (Vpn::available()) {
+            try {
+                Vpn::stop();
+            } catch (\Throwable $e) {
+                $this->appendLog('ERROR', 'Could not stop the connection: ' . $e->getMessage());
+            }
+        }
+        $this->setDisconnected();
+        $this->appendLog('INFO', 'Disconnected');
+    }
+
+    /** Picks up a tunnel that is already up (the app's screen was started again while the service went on). */
+    public function resumeConnection(): void
+    {
+        if (!Vpn::available() || $this->connection !== 'disconnected') {
+            return;
+        }
+        $state = Vpn::state();
+        if ($state === Vpn::CONNECTED || $state === Vpn::CONNECTING) {
+            $this->connection = $state;
+            $this->vpnAskedAt = microtime(true);
+            $this->watchVpn();
+        }
+    }
+
+    /**
+     * The app is in front again. Asked for a connection, it has nothing to tell when the person turned the system's
+     * permission down, so a little after the screen is back, a service that is still not there ends the wait.
+     */
+    public function vpnScreenBack(): void
+    {
+        if ($this->connection !== 'connecting' || !Vpn::available()) {
+            return;
+        }
+        $gen = $this->vpnWatchGen;
+        App::after(1.5, function () use ($gen): void {
+            if ($gen === $this->vpnWatchGen && $this->connection === 'connecting' && Vpn::state() === Vpn::STOPPED) {
+                $this->vpnWatchGen++;
+                $this->setDisconnected();
+                $this->appendLog('INFO', 'The connection was not allowed');
+                $this->window?->invalidate();
+            }
+        });
+    }
+
+    private function refuseConnection(string $message): void
+    {
+        $this->engineAlertMessage = $message;
         $this->engineAlertOpen = true;
-        $this->appendLog('WARNING', 'A connection was asked for; this build has no connection engine');
+        $this->appendLog('WARNING', $message);
+    }
+
+    private function setDisconnected(): void
+    {
+        $this->connection = 'disconnected';
+        $this->upSpeed = $this->downSpeed = '0B/s';
+        $this->trafficDetail = '';
+        $this->lastTraffic = null;
+    }
+
+    /** Follows the service once a second: connected, the speed, an error, or a tunnel that went away. */
+    private function watchVpn(): void
+    {
+        $gen = ++$this->vpnWatchGen;
+        $poll = null;
+        $poll = function () use (&$poll, $gen): void {
+            if ($gen !== $this->vpnWatchGen) {
+                return;
+            }
+            $this->pollVpn();
+            if ($gen === $this->vpnWatchGen && $this->connection !== 'disconnected') {
+                App::after(1.0, $poll);
+            }
+        };
+        App::after(0.5, $poll);
+    }
+
+    private function pollVpn(): void
+    {
+        $state = Vpn::state();
+        $waited = microtime(true) - $this->vpnAskedAt;
+        if ($state === Vpn::ERROR) {
+            $message = Vpn::error();
+            $this->setDisconnected();
+            $this->refuseConnection($message !== '' ? $message : 'The connection failed.');
+        } elseif ($state === Vpn::CONNECTED) {
+            if ($this->connection !== 'connected') {
+                $this->connection = 'connected';
+                $this->appendLog('INFO', 'Connected');
+            }
+            $this->updateTraffic();
+        } elseif ($state === Vpn::STOPPED) { // nothing yet while the permission is asked for; gone once it was up
+            if ($this->connection === 'connected' || $waited > self::CONNECT_TIMEOUT) {
+                $this->setDisconnected();
+                $this->appendLog('WARNING', $this->connection === 'connected' ? 'The connection was ended' : 'The connection was not made');
+            }
+        }
+        $this->window?->invalidate();
+    }
+
+    /** The speeds from the bytes carried since the last look; with the split, what went by the proxy and what directly. */
+    private function updateTraffic(): void
+    {
+        $t = Vpn::traffic();
+        if ($t === null) {
+            return;
+        }
+        $now = microtime(true);
+        if ($this->lastTraffic !== null && $now > $this->lastTrafficAt) {
+            $dt = $now - $this->lastTrafficAt;
+            $this->upSpeed = Vpn::formatSpeed(max(0, $t['up'] - $this->lastTraffic['up']) / $dt);
+            $this->downSpeed = Vpn::formatSpeed(max(0, $t['down'] - $this->lastTraffic['down']) / $dt);
+        }
+        $this->lastTraffic = $t;
+        $this->lastTrafficAt = $now;
+        $this->trafficDetail = isset($t['proxyUp'])
+            ? 'Proxy ↑ ' . Vpn::formatBytes($t['proxyUp']) . ' ↓ ' . Vpn::formatBytes($t['proxyDown'])
+                . '   Direct ↑ ' . Vpn::formatBytes($t['directUp']) . ' ↓ ' . Vpn::formatBytes($t['directDown'])
+            : '';
     }
 
     public function connectionLabel(): string
@@ -734,7 +887,7 @@ final class LinkingApp
         });
     }
 
-    /** @param list<array{name: string, protocol: string, address: string, port: int}> $nodes */
+    /** @param list<array{name: string, protocol: string, address: string, port: int, link: string}> $nodes */
     private function storeProfile(string $name, string $source, string $kind, array $nodes): void
     {
         $id = $this->nextProfileId++;

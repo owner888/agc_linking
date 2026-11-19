@@ -19,6 +19,11 @@ same(null, Vpn::parseTraffic('1 2 3'), 'a half split');
 same(null, Vpn::parseTraffic(''), 'no tunnel, no traffic');
 same(null, Vpn::parseTraffic('12'), 'one number');
 same(null, Vpn::parseTraffic('a b'), 'not numbers');
+same('0B/s', Vpn::formatSpeed(0), 'no speed');
+same('512B/s', Vpn::formatSpeed(512.9), 'bytes a second');
+same('1.5KB/s', Vpn::formatSpeed(1536), 'KB a second');
+same('3.0MB/s', Vpn::formatSpeed(3 * 1024 * 1024), 'MB a second');
+same('2.5GB', Vpn::formatBytes(2.5 * 1024 ** 3), 'GB');
 same(false, Vpn::available(), 'no VPN off Android');
 
 echo $failed === 0 ? "ok: $count checks\n" : "FAILED: $failed of $count\n";
