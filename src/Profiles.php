@@ -40,6 +40,9 @@ final class Profiles
                 $text = $decoded;
             }
         }
+        if (ClashSubscription::isClash($text)) { // Clash's YAML: each proxy as the link of its protocol
+            $text = implode("\n", ClashSubscription::links($text));
+        }
         $nodes = [];
         foreach (preg_split('/\R/', $text) ?: [] as $line) {
             $node = self::parseLink($line);

@@ -11,6 +11,8 @@ require "$framework/tests/Headless.php";
 require __DIR__ . '/../src/Icons.php';
 require __DIR__ . '/../src/Store.php';
 require __DIR__ . '/../src/ProxyLink.php';
+require __DIR__ . '/../src/MiniYaml.php';
+require __DIR__ . '/../src/ClashSubscription.php';
 require __DIR__ . '/../src/Profiles.php';
 require __DIR__ . '/../src/XrayConfig.php';
 require __DIR__ . '/../src/Vpn.php';

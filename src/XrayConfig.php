@@ -8,7 +8,7 @@ declare(strict_types=1);
 final class XrayConfig
 {
     /**
-     * The outbound a link names, null when it is a protocol this does not run (TUIC, and Hysteria2 until its transport is added).
+     * The outbound a link names, null when it is a protocol this does not run (TUIC).
      * @return array<string, mixed>|null
      */
     public static function outbound(string $link, string $tag = 'proxy'): ?array
@@ -26,13 +26,18 @@ final class XrayConfig
             'vmess' => self::vmess($p),
             'trojan' => $p['user'] === '' ? null : ['protocol' => 'trojan', 'settings' => ['servers' => [['address' => $p['host'], 'port' => $p['port'], 'password' => rawurldecode($p['user'])]]]],
             'ss' => self::shadowsocks($p),
+            'hy2', 'hysteria2' => self::hysteria($p),
             default => null,
         };
         if ($out === null) {
             return null;
         }
         $out['tag'] = $tag;
-        $stream = $p['scheme'] === 'vmess' ? self::vmessStream($p['json']) : self::stream($p);
+        $stream = match ($p['scheme']) {
+            'vmess' => self::vmessStream($p['json']),
+            'hy2', 'hysteria2' => self::hysteriaStream($p),
+            default => self::stream($p),
+        };
         if ($stream !== []) {
             $out['streamSettings'] = $stream;
         }
@@ -119,6 +124,60 @@ final class XrayConfig
         ]]]];
     }
 
+    /**
+     * The certificate a link pins (pinSHA256 of a Hysteria2 link, Clash's fingerprint): its SHA-256 in hex, with or
+     * without colons. Xray no longer has allowInsecure ("skip verifying the certificate"), so a link that asks for it
+     * and pins nothing is verified like any other: a node whose certificate is good works, one that relies on being
+     * unverified does not.
+     * @param array<string, string> $q
+     */
+    private static function pin(array $q): string
+    {
+        $pin = strtolower(str_replace(':', '', $q['pinSHA256'] ?? $q['pcs'] ?? ''));
+        return preg_match('/^[0-9a-f]{64}$/', $pin) === 1 ? $pin : '';
+    }
+
+    /** @param array<string, mixed> $p */
+    private static function hysteria(array $p): ?array
+    {
+        if (self::hysteriaAuth($p) === '') {
+            return null;
+        }
+        return ['protocol' => 'hysteria', 'settings' => ['version' => 2, 'address' => $p['host'], 'port' => $p['port']]];
+    }
+
+    /** The password of a Hysteria2 link: its user, with the part after a colon (user:password) when it has one. @param array<string, mixed> $p */
+    private static function hysteriaAuth(array $p): string
+    {
+        return $p['password'] !== '' ? $p['user'] . ':' . $p['password'] : $p['user'];
+    }
+
+    /**
+     * Hysteria2 is a transport of its own over QUIC: the password is its auth, TLS is always on (h3), and Salamander
+     * obfuscation, when the link names it, is a mask over the UDP packets.
+     * @param array<string, mixed> $p
+     * @return array<string, mixed>
+     */
+    private static function hysteriaStream(array $p): array
+    {
+        $q = $p['query'];
+        $sni = $q['sni'] ?? $q['peer'] ?? '';
+        $stream = [
+            'network' => 'hysteria',
+            'security' => 'tls',
+            'tlsSettings' => array_filter([
+                'serverName' => $sni !== '' ? $sni : $p['host'],
+                'alpn' => isset($q['alpn']) && $q['alpn'] !== '' ? explode(',', $q['alpn']) : ['h3'],
+                'pinnedPeerCertSha256' => self::pin($q),
+            ], static fn($v) => $v !== null && $v !== ''),
+            'hysteriaSettings' => ['version' => 2, 'auth' => self::hysteriaAuth($p)],
+        ];
+        if (($q['obfs'] ?? '') === 'salamander' && ($q['obfs-password'] ?? '') !== '') {
+            $stream['finalmask'] = ['udp' => [['type' => 'salamander', 'settings' => ['password' => $q['obfs-password']]]]];
+        }
+        return $stream;
+    }
+
     /** @param array<string, mixed> $p */
     private static function shadowsocks(array $p): ?array
     {
@@ -159,7 +218,7 @@ final class XrayConfig
                 'serverName' => $sni !== '' ? $sni : $p['host'],
                 'fingerprint' => $fingerprint,
                 'alpn' => isset($q['alpn']) && $q['alpn'] !== '' ? explode(',', $q['alpn']) : null,
-                'allowInsecure' => in_array($q['allowInsecure'] ?? $q['insecure'] ?? '', ['1', 'true'], true) ? true : null,
+                'pinnedPeerCertSha256' => self::pin($q),
             ], static fn($v) => $v !== '' && $v !== null);
         } elseif ($security === 'reality') {
             $stream['realitySettings'] = array_filter([
