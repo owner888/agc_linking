@@ -201,6 +201,18 @@ $configScreen = fn() => ListView()(
             Toggle('Proxy / Direct Traffic', isOn: $this->detailedTraffic),
             LabeledContent('Mixed Port', (string) $this->mixedPort),
         ),
+        Section(header: 'Latency Test', footer: 'CONNECT requests the URL through each proxy; ICMP and CONNECT run in the Android app.')(
+            Picker('Method', selection: $this->latencyMethod)(
+                Text('TCP')->tag('TCP'),
+                Text('ICMP')->tag('ICMP'),
+                Text('CONNECT')->tag('CONNECT'),
+            )->pickerStyle(PickerStyle::segmented),
+            TextField('URL', text: $this->latencyUrl, prompt: 'http://www.gstatic.com/generate_204'),
+            VStack(alignment: HorizontalAlignment::leading, spacing: 4)(
+                LabeledContent('Timeout', "{$this->latencyTimeout} s"),
+                Slider(value: $this->latencyTimeout, in: [1, 15], step: 1),
+            ),
+        ),
         Section(header: 'Ping & Probe')(
             VStack(alignment: HorizontalAlignment::leading, spacing: 4)(
                 LabeledContent('TTL', (string) $this->ttl),

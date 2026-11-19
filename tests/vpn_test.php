@@ -19,6 +19,8 @@ same(null, Vpn::parseTraffic('1 2 3'), 'a half split');
 same(null, Vpn::parseTraffic(''), 'no tunnel, no traffic');
 same(null, Vpn::parseTraffic('12'), 'one number');
 same(null, Vpn::parseTraffic('a b'), 'not numbers');
+same([12, -1, -2], Vpn::parseLatency('12,-1,-2'), 'latency answers');
+same([], Vpn::parseLatency(''), 'no test, no answers');
 same('0B/s', Vpn::formatSpeed(0), 'no speed');
 same('512B/s', Vpn::formatSpeed(512.9), 'bytes a second');
 same('1.5KB/s', Vpn::formatSpeed(1536), 'KB a second');

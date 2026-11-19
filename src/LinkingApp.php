@@ -114,6 +114,12 @@ final class LinkingApp
     public bool $profileBusy = false;
     public bool $testingLatency = false;
     public string $proxiesSort = 'default'; // 'default' | 'latency' | 'name'
+    // How the proxies' latency is measured, as Shadowrocket's: TCP (a connection to the server), ICMP (a ping to it),
+    // CONNECT (a request for the URL through the proxy)
+    public string $latencyMethod = 'TCP';
+    public string $latencyUrl = 'http://www.gstatic.com/generate_204';
+    public int $latencyTimeout = 5; // seconds
+    private const PROBE_PORT = 10900; // the first SOCKS port of a CONNECT test, one more for each proxy
 
     // The connection: 'disconnected' | 'connecting' | 'connected'. Made by the VPN service of the Android app (Vpn).
     public string $connection = 'disconnected';
@@ -924,10 +930,38 @@ final class LinkingApp
         $this->save();
     }
 
+    /** Takes a proxy; a connection that is up goes over to it, as Shadowrocket's does when another configuration is chosen. */
     public function selectNode(int $id): void
     {
+        $changed = $id !== $this->selectedNodeId;
         $this->selectedNodeId = $id;
         $this->save();
+        if ($changed && $this->connection !== 'disconnected') {
+            $this->reconnect();
+        }
+    }
+
+    /** Ends the connection and makes it again over the selected proxy; the system's permission is held, so no dialog. */
+    private function reconnect(): void
+    {
+        $this->disconnect();
+        $this->connection = 'connecting';
+        $this->vpnAskedAt = microtime(true);
+        $gen = ++$this->vpnWatchGen;
+        $tries = 0;
+        $retry = null;
+        $retry = function () use (&$retry, $gen, &$tries): void {
+            if ($gen !== $this->vpnWatchGen) {
+                return;
+            }
+            if (Vpn::state() === Vpn::STOPPED || ++$tries > 25) { // the service is down (or not going to say so): up again
+                $this->connection = 'disconnected';
+                $this->toggleConnection();
+                return;
+            }
+            App::after(0.2, $retry);
+        };
+        App::after(0.2, $retry);
     }
 
     public function selectedNode(): ?array
@@ -940,21 +974,46 @@ final class LinkingApp
         return null;
     }
 
-    /** Measures how long a TCP connection to each proxy of the active profile takes, one after the other. */
+    /** Measures the latency of each proxy of the active profile, by the method of the settings. */
     public function testLatency(): void
     {
         if ($this->testingLatency || $this->activeProfile() === null || $this->deterministicProbes || !class_exists(App::class)) {
             return;
         }
+        if ($this->latencyMethod !== 'TCP' && !Vpn::available()) {
+            $this->refuseConnection("The {$this->latencyMethod} test is made by the Android app only.");
+            return;
+        }
         $this->testingLatency = true;
         $profileId = $this->activeProfileId;
-        foreach ($this->profiles as $pi => $profile) {
+        $pi = null;
+        foreach ($this->profiles as $i => $profile) {
             if ($profile['id'] === $profileId) {
+                $pi = $i;
                 foreach ($profile['nodes'] as $ni => $_) {
-                    $this->profiles[$pi]['nodes'][$ni]['latency'] = null;
+                    $this->profiles[$i]['nodes'][$ni]['latency'] = null;
                 }
             }
         }
+        $nodes = $this->profiles[$pi]['nodes'];
+        try {
+            match ($this->latencyMethod) {
+                'ICMP' => $this->startNativeTest($pi, fn() => Vpn::startPingTest(array_column($nodes, 'address'), $this->latencyTimeout * 1000)),
+                'CONNECT' => $this->startNativeTest($pi, function () use ($nodes): void {
+                    $probe = XrayConfig::probe(array_map(fn(array $n) => (string) ($n['link'] ?? ''), $nodes), self::PROBE_PORT);
+                    Vpn::startUrlTest($probe['config'], $probe['ports'], $this->latencyUrl, $this->latencyTimeout * 1000);
+                }),
+                default => $this->startTcpTest($profileId),
+            };
+        } catch (\Throwable $e) {
+            $this->testingLatency = false;
+            $this->refuseConnection('The latency could not be measured: ' . $e->getMessage());
+        }
+    }
+
+    /** TCP: the time a connection to the server takes, one proxy after the other. */
+    private function startTcpTest(int $profileId): void
+    {
         App::go(function () use ($profileId): void {
             try {
                 foreach ($this->profiles as $pi => $profile) {
@@ -968,12 +1027,45 @@ final class LinkingApp
                     }
                 }
             } finally {
-                $this->testingLatency = false;
-                $this->appendLog('INFO', 'Measured the latency of the proxies');
-                $this->save();
-                $this->window?->invalidate();
+                $this->finishLatencyTest();
             }
         });
+    }
+
+    /** ICMP and CONNECT run in the Android app's own threads; this takes their answers as they come. */
+    private function startNativeTest(int $profileIndex, \Closure $start): void
+    {
+        $start();
+        $poll = null;
+        $poll = function () use (&$poll, $profileIndex): void {
+            $done = true;
+            try {
+                foreach (Vpn::latency() as $ni => $ms) {
+                    if ($ms === Vpn::LATENCY_PENDING) {
+                        $done = false;
+                    } elseif (isset($this->profiles[$profileIndex]['nodes'][$ni])) {
+                        $this->profiles[$profileIndex]['nodes'][$ni]['latency'] = $ms;
+                    }
+                }
+            } catch (\Throwable) {
+                $done = true;
+            }
+            $this->window?->invalidate();
+            if ($done) {
+                $this->finishLatencyTest();
+            } else {
+                App::after(0.3, $poll);
+            }
+        };
+        App::after(0.3, $poll);
+    }
+
+    private function finishLatencyTest(): void
+    {
+        $this->testingLatency = false;
+        $this->appendLog('INFO', "Measured the latency of the proxies ({$this->latencyMethod})");
+        $this->save();
+        $this->window?->invalidate();
     }
 
     // --- Where the menu goes ---
@@ -1009,10 +1101,10 @@ final class LinkingApp
         $this->profiles = is_array($data['profiles'] ?? null) ? $data['profiles'] : [];
         $this->activeProfileId = (int) ($data['activeProfileId'] ?? 0);
         $this->selectedNodeId = (int) ($data['selectedNodeId'] ?? 0);
-        foreach (['ttl', 'timeOut', 'interval', 'packetSize', 'mixedPort'] as $key) {
+        foreach (['ttl', 'timeOut', 'interval', 'packetSize', 'mixedPort', 'latencyTimeout'] as $key) {
             if (isset($data[$key])) { $this->$key = (int) $data[$key]; }
         }
-        foreach (['ipLibrary', 'routingMode', 'skippedVersion', 'selectedDns', 'toolType', 'hostInput'] as $key) {
+        foreach (['ipLibrary', 'routingMode', 'skippedVersion', 'selectedDns', 'toolType', 'hostInput', 'latencyMethod', 'latencyUrl'] as $key) {
             if (isset($data[$key]) && is_string($data[$key])) { $this->$key = $data[$key]; }
         }
         foreach (['tunEnabled', 'ipv6Enabled', 'detailedTraffic'] as $key) {
@@ -1042,6 +1134,7 @@ final class LinkingApp
             'mixedPort' => $this->mixedPort, 'ipLibrary' => $this->ipLibrary, 'routingMode' => $this->routingMode,
             'skippedVersion' => $this->skippedVersion, 'selectedDns' => $this->selectedDns, 'toolType' => $this->toolType,
             'hostInput' => $this->hostInput, 'tunEnabled' => $this->tunEnabled, 'ipv6Enabled' => $this->ipv6Enabled, 'detailedTraffic' => $this->detailedTraffic,
+            'latencyMethod' => $this->latencyMethod, 'latencyUrl' => $this->latencyUrl, 'latencyTimeout' => $this->latencyTimeout,
         ]);
     }
 

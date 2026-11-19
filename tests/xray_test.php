@@ -68,5 +68,15 @@ same('direct', end($d['routing']['rules'])['outboundTag'] ?? '', 'direct mode en
 $d['routing']['rules'][] = 1; // stays valid JSON
 same(true, json_encode($c) !== false && str_contains((string) json_encode($c), '"stats":{}'), 'stats is an empty object');
 
+// The probe: every proxy behind a SOCKS inbound of its own, one that is not run left out with port 0
+$probe = XrayConfig::probe(["vless://$uuid@a.example.com:443#A", 'tuic://x@b.example.com:443#B', "trojan://pw@c.example.com:443#C"], 10900);
+same([10900, 0, 10902], $probe['ports'], 'probe ports, 0 for a proxy that is not run');
+same(['in0', 'in2'], array_column($probe['config']['inbounds'], 'tag'), 'probe inbounds');
+same(['p0', 'p2'], array_column($probe['config']['outbounds'], 'tag'), 'probe outbounds');
+same(['in2'], $probe['config']['routing']['rules'][1]['inboundTag'], 'probe routes an inbound');
+same('p2', $probe['config']['routing']['rules'][1]['outboundTag'], 'to its own outbound');
+same(false, $probe['config']['inbounds'][0]['settings']['udp'], 'probe inbounds take no UDP');
+same('freedom', XrayConfig::probe(['nonsense'], 10900)['config']['outbounds'][0]['protocol'], 'probe with nothing to run still has an outbound');
+
 echo "\n$count checks, $failed failed\n";
 exit($failed > 0 ? 1 : 0);

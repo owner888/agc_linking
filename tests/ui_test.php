@@ -157,6 +157,8 @@ Device::setChannel('apk');
 $app->ttl = 128;
 $app->go('config');
 $h->frame();
+$h->wheel(200, 400, 0, -3000); // the settings list has grown past the screen: scroll to its end
+$h->frame();
 $h->clickText('Reset to Default');
 $h->frame();
 same(64, $app->ttl, 'Reset to Default restored TTL to 64');

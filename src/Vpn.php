@@ -75,6 +75,45 @@ final class Vpn
         return $t;
     }
 
+    private const LATENCY = 'easy.net.tool.vpn.LatencyTest';
+    public const LATENCY_PENDING = -2;
+    public const LATENCY_FAILED = -1;
+
+    /**
+     * Measures proxies by a request for $url through each (Shadowrocket's CONNECT test); poll with latency(). $ports:
+     * the SOCKS port of each proxy in $config (XrayConfig::probe), 0 for one that has none.
+     * @param list<int> $ports
+     */
+    public static function startUrlTest(array $config, array $ports, string $url, int $timeoutMs): void
+    {
+        $json = json_encode($config, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
+        Jni::callStatic(self::LATENCY, 'startUrl', '(' . self::CONTEXT . 'Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;I)V',
+            Jni::activity(), $json, implode(',', $ports), $url, $timeoutMs);
+    }
+
+    /** Measures hosts by the system's ping; poll with latency(). @param list<string> $hosts */
+    public static function startPingTest(array $hosts, int $timeoutMs): void
+    {
+        Jni::callStatic(self::LATENCY, 'startPing', '(Ljava/lang/String;I)V', implode(',', $hosts), $timeoutMs);
+    }
+
+    /** @return list<int> a number for each proxy: milliseconds, LATENCY_FAILED or LATENCY_PENDING */
+    public static function latency(): array
+    {
+        return self::parseLatency((string) Jni::callStatic(self::LATENCY, 'poll', '()Ljava/lang/String;'));
+    }
+
+    public static function cancelLatencyTest(): void
+    {
+        Jni::callStatic(self::LATENCY, 'cancel', '()V');
+    }
+
+    /** @return list<int> */
+    public static function parseLatency(string $text): array
+    {
+        return $text === '' ? [] : array_map('intval', explode(',', $text));
+    }
+
     /** A rate for the screen: 0B/s, 512B/s, 1.2KB/s, 3.4MB/s. */
     public static function formatSpeed(float $bytesPerSecond): string
     {

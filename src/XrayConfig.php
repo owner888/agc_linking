@@ -40,6 +40,36 @@ final class XrayConfig
     }
 
     /**
+     * A configuration that holds every proxy of $links at once, each behind a SOCKS inbound of its own on 127.0.0.1
+     * ($basePort, $basePort + 1, ...), to measure them through: a request to a port goes out by that proxy only.
+     * @param list<string> $links
+     * @return array{config: array<string, mixed>, ports: list<int>} ports in the order of $links, 0 for a link this does not run
+     */
+    public static function probe(array $links, int $basePort): array
+    {
+        $inbounds = $outbounds = $rules = $ports = [];
+        foreach ($links as $i => $link) {
+            $out = self::outbound($link, "p$i");
+            if ($out === null) {
+                $ports[] = 0;
+                continue;
+            }
+            $port = $basePort + $i;
+            $ports[] = $port;
+            $outbounds[] = $out;
+            $inbounds[] = ['tag' => "in$i", 'listen' => '127.0.0.1', 'port' => $port, 'protocol' => 'socks', 'settings' => ['auth' => 'noauth', 'udp' => false]];
+            $rules[] = ['type' => 'field', 'inboundTag' => ["in$i"], 'outboundTag' => "p$i"];
+        }
+        return ['config' => [
+            'log' => ['loglevel' => 'warning'],
+            'dns' => ['servers' => ['1.1.1.1', '8.8.8.8']],
+            'inbounds' => $inbounds,
+            'outbounds' => $outbounds === [] ? [['tag' => 'direct', 'protocol' => 'freedom']] : $outbounds,
+            'routing' => ['domainStrategy' => 'AsIs', 'rules' => $rules],
+        ], 'ports' => $ports];
+    }
+
+    /**
      * The configuration to run, as JSON.
      * @param string $mode 'Rule' | 'Global' | 'Direct'
      * @return array<string, mixed>|null null when the link is not one this runs
