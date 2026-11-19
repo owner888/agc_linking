@@ -119,6 +119,8 @@ final class Vpn
     private const LATENCY = 'easy.net.tool.vpn.LatencyTest';
     public const LATENCY_PENDING = -2;
     public const LATENCY_FAILED = -1;
+    /** A proxy of a protocol the connection engine does not run (TUIC): there is nothing to measure through it. */
+    public const LATENCY_UNSUPPORTED = -3;
 
     /**
      * Measures proxies by a request for $url through each (Shadowrocket's CONNECT test); poll with latency(). $ports:

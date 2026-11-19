@@ -190,6 +190,13 @@ $app->setAutomation('autoConnect', false);
 same([false, true], [$app->autoConnect, $app->broadcastControl], 'each switches by itself');
 $app->setAutomation('broadcastControl', false);
 
+// 5e. A proxy the engine does not run (TUIC) is told as such, not as a timeout
+same('Unsupported', $app->latencyText(Vpn::LATENCY_UNSUPPORTED), 'a proxy of a protocol the engine does not run shows Unsupported');
+same('Timeout', $app->latencyText(Vpn::LATENCY_FAILED), 'a proxy that did not answer shows Timeout');
+same('-', $app->latencyText(null), 'one not measured shows -');
+$tuic = ['id' => 98, 'name' => 'T', 'protocol' => 'TUIC', 'address' => 'tuic.example.com', 'port' => 443, 'latency' => null, 'link' => 'tuic://u:p@tuic.example.com:443#T'];
+same(null, XrayConfig::build($tuic['link'], 'Rule'), 'Xray has no TUIC: there is no configuration to run');
+
 // 6. Switch to Settings tab and test Reset to Default & Standalone DMG/APK In-App Update Capsule
 if (PHP_OS_FAMILY === 'Darwin') {
     same('dmg', Device::channel(), 'macOS standalone build defaults to dmg channel');

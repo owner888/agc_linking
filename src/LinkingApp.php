@@ -130,6 +130,8 @@ final class LinkingApp
     public string $downSpeed = '0B/s';
     public string $trafficDetail = ''; // proxy and direct traffic since it connected, with $detailedTraffic
     private int $vpnWatchGen = 0;
+    /** @var list<int> the proxies of the test that runs that the engine does not run: they show Unsupported, not Timeout */
+    private array $unsupportedNodes = [];
     /** @var array<string, bool> what was last given to the files the automations read */
     private array $syncedAutomation = [];
     private float $vpnAskedAt = 0.0;
@@ -676,7 +678,7 @@ final class LinkingApp
         }
         $config = $node === null ? null : XrayConfig::build($node['link'] ?? '', $this->routingMode, self::SOCKS_PORT, self::API_PORT);
         if ($node === null || $config === null) {
-            $this->refuseConnection(($node['protocol'] ?? 'This') . ' proxies are not supported yet.');
+            $this->refuseConnection(($node['protocol'] ?? 'This') . ' proxies cannot be connected: the connection engine (Xray) does not run them. Choose another proxy.');
             return;
         }
         try {
@@ -856,7 +858,7 @@ final class LinkingApp
 
     public function latencyText(?int $ms): string
     {
-        return $ms === null ? '-' : ($ms < 0 ? 'Timeout' : "{$ms} ms");
+        return $ms === null ? '-' : ($ms === Vpn::LATENCY_UNSUPPORTED ? 'Unsupported' : ($ms < 0 ? 'Timeout' : "{$ms} ms"));
     }
 
     public function openAddProfile(): void
@@ -1108,6 +1110,7 @@ final class LinkingApp
             return;
         }
         $this->testingLatency = true;
+        $this->unsupportedNodes = [];
         $profileId = $this->activeProfileId;
         $pi = null;
         foreach ($this->profiles as $i => $profile) {
@@ -1125,6 +1128,7 @@ final class LinkingApp
                 'CONNECT' => $this->startNativeTest($pi, function () use ($nodes): void {
                     $probe = XrayConfig::probe(array_map(fn(array $n) => (string) ($n['link'] ?? ''), $nodes), self::PROBE_PORT);
                     Vpn::startUrlTest($probe['config'], $probe['ports'], $this->latencyUrl, $this->latencyTimeout * 1000);
+                    $this->unsupportedNodes = array_keys(array_filter($probe['ports'], fn(int $port) => $port === 0));
                 }),
                 default => $this->startTcpTest($profileId),
             };
@@ -1164,6 +1168,7 @@ final class LinkingApp
             $done = true;
             try {
                 foreach (Vpn::latency() as $ni => $ms) {
+                    $ms = in_array($ni, $this->unsupportedNodes, true) ? Vpn::LATENCY_UNSUPPORTED : $ms;
                     if ($ms === Vpn::LATENCY_PENDING) {
                         $done = false;
                     } elseif (isset($this->profiles[$profileIndex]['nodes'][$ni])) {
