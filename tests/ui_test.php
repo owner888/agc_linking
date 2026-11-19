@@ -176,6 +176,15 @@ $app->appSearch = '';
 $app->appPackages = [];
 same('None', $app->appsSummary(), 'none chosen');
 
+// 5d. The automation switches are kept (and, on Android, given at once to what acts with no screen)
+$app->setAutomation('autoConnect', true);
+same(true, $app->autoConnect, 'Connect at Boot is on');
+same(false, $app->broadcastControl, 'and the broadcasts are still off');
+$app->setAutomation('broadcastControl', true);
+$app->setAutomation('autoConnect', false);
+same([false, true], [$app->autoConnect, $app->broadcastControl], 'each switches by itself');
+$app->setAutomation('broadcastControl', false);
+
 // 6. Switch to Settings tab and test Reset to Default & Standalone DMG/APK In-App Update Capsule
 if (PHP_OS_FAMILY === 'Darwin') {
     same('dmg', Device::channel(), 'macOS standalone build defaults to dmg channel');

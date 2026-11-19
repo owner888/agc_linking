@@ -130,6 +130,8 @@ final class LinkingApp
     public string $downSpeed = '0B/s';
     public string $trafficDetail = ''; // proxy and direct traffic since it connected, with $detailedTraffic
     private int $vpnWatchGen = 0;
+    /** @var array<string, bool> what was last given to the files the automations read */
+    private array $syncedAutomation = [];
     private float $vpnAskedAt = 0.0;
     private ?array $lastTraffic = null;
     private float $lastTrafficAt = 0.0;
@@ -148,6 +150,9 @@ final class LinkingApp
     public string $appSearch = '';
     /** @var list<array{package: string, label: string}> */
     public array $installedApps = [];
+    // What acts with no screen on the last connection: the quick settings tile always, these when the person turns them on
+    public bool $autoConnect = false;      // connect when the phone has started
+    public bool $broadcastControl = false; // take the app's broadcasts (CONNECT, DISCONNECT, TOGGLE)
     public bool $detailedTraffic = false; // count the proxy's and the direct traffic apart: Xray is asked every second, so it is off by default
     public int $mixedPort = 7890;
 
@@ -936,6 +941,12 @@ final class LinkingApp
 
     public function removeActiveProfile(): void
     {
+        if (Vpn::available()) {
+            try {
+                Vpn::forgetLastSession(); // the proxy it holds is going: the tile and the boot must not connect to it
+            } catch (\Throwable) {
+            }
+        }
         $this->profiles = array_values(array_filter($this->profiles, fn(array $p) => $p['id'] !== $this->activeProfileId));
         $this->activeProfileId = 0;
         $this->selectedNodeId = 0;
@@ -943,6 +954,36 @@ final class LinkingApp
             $this->selectProfile($this->profiles[0]['id']);
         }
         $this->save();
+    }
+
+    /** A switch of the Automation section: kept, and given at once to the files the tile, the boot and the broadcasts read. */
+    public function setAutomation(string $property, bool $on): void
+    {
+        if ($property === 'autoConnect') {
+            $this->autoConnect = $on;
+        } elseif ($property === 'broadcastControl') {
+            $this->broadcastControl = $on;
+        }
+        $this->save();
+    }
+
+    /** What the person turned on goes to the files the tile, the boot and the broadcasts read, when it changed. */
+    private function syncAutomation(): void
+    {
+        if (!Vpn::available() || $this->deterministicProbes) {
+            return;
+        }
+        $now = ['autostart' => $this->autoConnect, 'broadcast' => $this->broadcastControl];
+        foreach ($now as $name => $on) {
+            if (($this->syncedAutomation[$name] ?? null) !== $on) {
+                try {
+                    Vpn::setOption($name, $on);
+                    $this->syncedAutomation[$name] = $on;
+                } catch (\Throwable $e) {
+                    $this->appendLog('ERROR', "Could not set {$name}: " . $e->getMessage());
+                }
+            }
+        }
     }
 
     /** Takes a proxy; a connection that is up is ended, the person connects again over the new one. */
@@ -1190,7 +1231,7 @@ final class LinkingApp
             if (isset($data[$key]) && is_string($data[$key])) { $this->$key = $data[$key]; }
         }
         $this->appPackages = array_values(array_filter(is_array($data['appPackages'] ?? null) ? $data['appPackages'] : [], 'is_string'));
-        foreach (['tunEnabled', 'ipv6Enabled', 'detailedTraffic'] as $key) {
+        foreach (['tunEnabled', 'ipv6Enabled', 'detailedTraffic', 'autoConnect', 'broadcastControl'] as $key) {
             if (isset($data[$key])) { $this->$key = (bool) $data[$key]; }
         }
         $this->nextFavId = max(array_column($this->favorites, 'id') ?: [0]) + 1;
@@ -1207,6 +1248,7 @@ final class LinkingApp
 
     public function save(): void
     {
+        $this->syncAutomation();
         $this->store?->save([
             'favorites' => $this->favorites,
             'history' => $this->history,
@@ -1216,7 +1258,7 @@ final class LinkingApp
             'ttl' => $this->ttl, 'timeOut' => $this->timeOut, 'interval' => $this->interval, 'packetSize' => $this->packetSize,
             'mixedPort' => $this->mixedPort, 'ipLibrary' => $this->ipLibrary, 'routingMode' => $this->routingMode,
             'skippedVersion' => $this->skippedVersion, 'selectedDns' => $this->selectedDns, 'toolType' => $this->toolType,
-            'hostInput' => $this->hostInput, 'tunEnabled' => $this->tunEnabled, 'ipv6Enabled' => $this->ipv6Enabled, 'detailedTraffic' => $this->detailedTraffic,
+            'hostInput' => $this->hostInput, 'tunEnabled' => $this->tunEnabled, 'ipv6Enabled' => $this->ipv6Enabled, 'detailedTraffic' => $this->detailedTraffic, 'autoConnect' => $this->autoConnect, 'broadcastControl' => $this->broadcastControl,
             'appMode' => $this->appMode, 'appPackages' => $this->appPackages,
             'latencyMethod' => $this->latencyMethod, 'latencyUrl' => $this->latencyUrl, 'latencyTimeout' => $this->latencyTimeout,
         ]);

@@ -214,6 +214,12 @@ $configScreen = fn() => ListView()(
             ),
         ),
         Vpn::available()
+            ? Section(header: 'Automation', footer: 'The quick settings tile connects and disconnects with the last proxy; connect once from here first. Broadcasts: easy.net.tool.action.CONNECT, DISCONNECT, TOGGLE, sent to this app\'s AutomationReceiver, for other apps to use.')(
+                Toggle('Connect at Boot', isOn: new Binding(get: fn() => $this->autoConnect, set: fn(bool $on) => $this->setAutomation('autoConnect', $on))),
+                Toggle('Allow Broadcast Control', isOn: new Binding(get: fn() => $this->broadcastControl, set: fn(bool $on) => $this->setAutomation('broadcastControl', $on))),
+            )
+            : null,
+        Vpn::available()
             ? Section(header: 'Per-App Proxy', footer: match ($this->appMode) {
                 'only' => 'Only the selected apps go through the connection; the others go out directly. Takes effect when it connects again.',
                 'except' => 'The selected apps go out directly; all the others go through the connection. Takes effect when it connects again.',

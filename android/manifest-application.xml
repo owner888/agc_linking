@@ -15,3 +15,23 @@
     android:name="easy.net.tool.vpn.VpnLauncherActivity"
     android:exported="false"
     android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+<service
+    android:name="easy.net.tool.vpn.LinkingTileService"
+    android:exported="true"
+    android:icon="@android:drawable/ic_lock_lock"
+    android:label="Linking"
+    android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+    <intent-filter>
+        <action android:name="android.service.quicksettings.action.QS_TILE" />
+    </intent-filter>
+</service>
+<receiver
+    android:name="easy.net.tool.vpn.AutomationReceiver"
+    android:exported="true">
+    <intent-filter>
+        <action android:name="android.intent.action.BOOT_COMPLETED" />
+        <action android:name="easy.net.tool.action.CONNECT" />
+        <action android:name="easy.net.tool.action.DISCONNECT" />
+        <action android:name="easy.net.tool.action.TOGGLE" />
+    </intent-filter>
+</receiver>

@@ -41,6 +41,18 @@ final class Vpn
             Jni::activity(), $json, $socksPort, $apiPort, $detailedTraffic, $appMode, implode(',', $apps), $title, $text, $stopLabel);
     }
 
+    /** Turns an automation on or off for the tile, the boot and the broadcasts, which act with no screen: 'autostart' or 'broadcast'. */
+    public static function setOption(string $name, bool $on): void
+    {
+        Jni::callStatic(self::API, 'setOption', '(' . self::CONTEXT . 'Ljava/lang/String;Z)V', Jni::activity(), $name, $on);
+    }
+
+    /** Forgets what the last connection was made with (a proxy was removed), so that nothing connects to it again. */
+    public static function forgetLastSession(): void
+    {
+        Jni::callStatic(self::API, 'forgetLastSession', '(' . self::CONTEXT . ')V', Jni::activity());
+    }
+
     /** The folder Xray reads geoip.dat and geosite.dat from. */
     public static function assetDir(): string
     {

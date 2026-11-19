@@ -3,9 +3,7 @@ package easy.net.tool.vpn;
 import android.content.Context;
 import android.content.Intent;
 import java.io.File;
-import java.io.FileOutputStream;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 
 /**
  * What the app's PHP calls over JNI, all static, the activity as the Context. State and traffic come from files
@@ -29,21 +27,23 @@ public final class VpnApi {
      */
     public static void start(Context context, String configJson, int socksPort, int apiPort, boolean detailedTraffic, String appMode, String apps, String title, String text, String stopLabel)
             throws IOException {
-        File config = new File(context.getFilesDir(), "xray.json");
-        try (FileOutputStream out = new FileOutputStream(config)) {
-            out.write(configJson.getBytes(StandardCharsets.UTF_8));
-        }
-        Intent launch = new Intent(context, VpnLauncherActivity.class)
-            .putExtra(LinkingVpnService.EXTRA_CONFIG, config.getPath())
-            .putExtra(LinkingVpnService.EXTRA_SOCKS_PORT, socksPort)
-            .putExtra(LinkingVpnService.EXTRA_API_PORT, apiPort)
-            .putExtra(LinkingVpnService.EXTRA_DETAILED_TRAFFIC, detailedTraffic)
-            .putExtra(LinkingVpnService.EXTRA_APP_MODE, appMode)
-            .putExtra(LinkingVpnService.EXTRA_APPS, apps)
-            .putExtra(LinkingVpnService.EXTRA_TITLE, title)
-            .putExtra(LinkingVpnService.EXTRA_TEXT, text)
-            .putExtra(LinkingVpnService.EXTRA_STOP_LABEL, stopLabel);
-        context.startActivity(launch);
+        LastSession.save(context, configJson, socksPort, apiPort, detailedTraffic, appMode, apps, title, text, stopLabel);
+        context.startActivity(LastSession.intent(context, new Intent(context, VpnLauncherActivity.class)));
+    }
+
+    /** Whether a connection has been made before, so that the tile, the boot and a broadcast can make it again. */
+    public static boolean hasLastSession(Context context) {
+        return LastSession.exists(context);
+    }
+
+    /** Forgets what the last connection was (its proxy's secrets with it): the proxy was removed. */
+    public static void forgetLastSession(Context context) {
+        LastSession.forget(context);
+    }
+
+    /** Turns an automation on or off: "autostart" (connect when the phone has started) or "broadcast" (take the app's broadcasts). */
+    public static void setOption(Context context, String name, boolean on) {
+        Options.set(context, name, on);
     }
 
     /** The folder Xray reads geoip.dat and geosite.dat from; the app's updates of them are written there. */
