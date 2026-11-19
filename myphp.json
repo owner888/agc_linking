@@ -12,5 +12,10 @@
         "category": "desktop",
         "tag": "网络诊断与智能连接工具箱",
         "image": "screenshot.jpg"
+    },
+    "ios": {
+        "infoPlist": {
+            "NSLocalNetworkUsageDescription": "Linking tests the hosts and servers of the network you are on."
+        }
     }
 }
