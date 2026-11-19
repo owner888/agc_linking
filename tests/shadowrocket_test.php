@@ -29,6 +29,20 @@ $plain = XrayConfig::outbound('vmess://' . rtrim(base64_encode("auto:$uuid@203.0
 same(['tcp', 'none', 8443], [$plain['streamSettings']['network'] ?? 'tcp', $plain['streamSettings']['security'] ?? 'none', $plain['settings']['vnext'][0]['port']], 'one with no obfs and no tls is plain tcp');
 $grpc = XrayConfig::outbound('vmess://' . rtrim(base64_encode("auto:$uuid@vm.example.com:443"), '=') . '?obfs=grpc&path=svc&tls=1');
 same(['grpc', 'svc'], [$grpc['streamSettings']['network'], $grpc['streamSettings']['grpcSettings']['serviceName']], 'obfs=grpc takes the path as its service name');
+// obfs=http: HTTP obfuscation of a plain TCP stream (a request for path to host), not a websocket
+$http = XrayConfig::outbound('vmess://' . rtrim(base64_encode("auto:$uuid@vm.example.com:63711"), '=') . '?path=/download/updates&remarks=H&obfsParam=update.example.org&obfs=http&udp=1&alterId=0');
+same(['tcp', 'none', 'http', ['/download/updates'], ['update.example.org']],
+    [$http['streamSettings']['network'], $http['streamSettings']['security'], $http['streamSettings']['tcpSettings']['header']['type'],
+        $http['streamSettings']['tcpSettings']['header']['request']['path'], $http['streamSettings']['tcpSettings']['header']['request']['headers']['Host']], 'obfs=http is dressed as an HTTP request');
+$jsonHttp = XrayConfig::outbound('vmess://' . base64_encode(json_encode(['add' => 'vm.example.com', 'port' => '80', 'id' => $uuid, 'net' => 'tcp', 'type' => 'http', 'host' => 'h.example.org', 'path' => '/p'])));
+same('http', $jsonHttp['streamSettings']['tcpSettings']['header']['type'] ?? null, 'so is v2rayN\'s type=http');
+same('none', XrayConfig::outbound('vmess://' . rtrim(base64_encode("auto:$uuid@vm.example.com:443"), '=') . '?obfs=none')['streamSettings']['tcpSettings']['header']['type'] ?? 'none', 'obfs=none is not');
+
+// vless with the user part ":uuid" (no method before it), tls=1 and xtls=2
+$v = 'vless://' . rtrim(base64_encode(":$uuid@edge.example.com:443"), '=') . '?remarks=X&tls=1&peer=www.example.org&udp=1&xtls=2&pbk=KEY&sid=ab12';
+$vo = XrayConfig::outbound($v);
+same([$uuid, 'xtls-rprx-vision', 'reality', 'www.example.org'], [$vo['settings']['vnext'][0]['users'][0]['id'], $vo['settings']['vnext'][0]['users'][0]['flow'], $vo['streamSettings']['security'], $vo['streamSettings']['realitySettings']['serverName']], 'vless with an empty method before the uuid');
+
 same('vm.example.com', ProxyLink::parse('vmess://' . rtrim(base64_encode(json_encode(['add' => 'vm.example.com', 'port' => '443', 'id' => $uuid, 'ps' => 'J'])), '=')) ['host'] ?? null, 'v2rayN\'s JSON form still reads');
 same(null, ProxyLink::parse('vmess://' . rtrim(base64_encode('nonsense'), '=')), 'what is neither is not read');
 

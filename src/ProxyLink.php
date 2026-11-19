@@ -95,6 +95,7 @@ final class ProxyLink
                 'v' => '2', 'ps' => $query['remarks'] ?? $query['remark'] ?? '', 'add' => trim($m[3], '[]'), 'port' => $m[4], 'id' => $m[2],
                 'aid' => $query['alterId'] ?? $query['aid'] ?? '0', 'scy' => $m[1] !== '' ? $m[1] : 'auto', 'net' => $net,
                 'host' => $query['obfsParam'] ?? $query['host'] ?? '', 'path' => $query['path'] ?? '',
+                'type' => strtolower($query['obfs'] ?? '') === 'http' ? 'http' : '', // obfs=http is HTTP obfuscation of a plain TCP stream
                 'tls' => ($query['tls'] ?? '') === '1' || ($query['tls'] ?? '') === 'true' ? 'tls' : '', 'sni' => $query['peer'] ?? $query['sni'] ?? '',
             ], static fn($v) => $v !== '');
         }

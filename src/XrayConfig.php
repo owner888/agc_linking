@@ -232,6 +232,19 @@ final class XrayConfig
         $path = $q['path'] ?? '';
         $host = $q['host'] ?? '';
         switch ($network) {
+            case 'tcp':
+                if (strtolower($q['headerType'] ?? $q['type'] ?? '') === 'http') { // HTTP obfuscation: the stream dressed as a request for $path to $host
+                    $stream['tcpSettings'] = ['header' => ['type' => 'http', 'request' => [
+                        'version' => '1.1', 'method' => 'GET',
+                        'path' => $path !== '' ? explode(',', $path) : ['/'],
+                        'headers' => array_filter([
+                            'Host' => $host !== '' ? explode(',', $host) : null,
+                            'User-Agent' => ['Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36'],
+                            'Accept-Encoding' => ['gzip, deflate'], 'Connection' => ['keep-alive'], 'Pragma' => 'no-cache',
+                        ], static fn($v) => $v !== null),
+                    ]]];
+                }
+                break;
             case 'ws':
                 $stream['wsSettings'] = array_filter(['path' => $path !== '' ? $path : '/', 'headers' => $host !== '' ? ['Host' => $host] : null], static fn($v) => $v !== null);
                 break;
@@ -261,7 +274,7 @@ final class XrayConfig
     private static function vmessStream(array $j): array
     {
         $network = (string) ($j['net'] ?? 'tcp');
-        $q = ['type' => $network, 'path' => (string) ($j['path'] ?? ''), 'host' => (string) ($j['host'] ?? ''),
+        $q = ['type' => $network, 'headerType' => (string) ($j['type'] ?? ''), 'path' => (string) ($j['path'] ?? ''), 'host' => (string) ($j['host'] ?? ''),
             'sni' => (string) ($j['sni'] ?? ''), 'fp' => (string) ($j['fp'] ?? ''), 'alpn' => (string) ($j['alpn'] ?? ''),
             'security' => ($j['tls'] ?? '') === 'tls' ? 'tls' : 'none', 'serviceName' => (string) ($j['path'] ?? '')];
         return self::stream(['scheme' => 'vmess', 'host' => (string) ($j['add'] ?? ''), 'query' => $q]);
