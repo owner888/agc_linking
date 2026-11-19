@@ -14,6 +14,8 @@ import java.nio.charset.StandardCharsets;
  * Whether the tunnel is up, shared between the app's two processes without a static variable: the :service process
  * holds a file lock while a tunnel is being made or is up, the process of the UI asks the lock. The kernel drops
  * the lock when the process dies, so a killed service never reads as running. The state file says which stage.
+ * Closing any file descriptor of the lock file drops a POSIX lock of the process, so isRunning() and state() are
+ * for the UI's process; the service asks nothing of them.
  */
 public final class VpnSession {
     public static final String STOPPED = "stopped";
@@ -23,6 +25,7 @@ public final class VpnSession {
 
     private static final String LOCK_FILE = "vpn.lock";
     private static final String STATE_FILE = "vpn.state";
+    private static final String TRAFFIC_FILE = "vpn.traffic";
 
     private RandomAccessFile file;
     private FileLock lock;
@@ -93,6 +96,31 @@ public final class VpnSession {
             return nl < 0 ? new String[] {text, ""} : new String[] {text.substring(0, nl), text.substring(nl + 1)};
         } catch (IOException e) {
             return new String[] {STOPPED, ""};
+        }
+    }
+
+    /** The bytes the tunnel has carried since it came up, for the UI to read: "uploaded downloaded". */
+    static void writeTraffic(Context context, long tx, long rx) {
+        try (FileOutputStream out = new FileOutputStream(new File(context.getFilesDir(), TRAFFIC_FILE))) {
+            out.write((tx + " " + rx).getBytes(StandardCharsets.UTF_8));
+        } catch (IOException ignored) {
+            // a count missed is made up by the next
+        }
+    }
+
+    static void clearTraffic(Context context) {
+        new File(context.getFilesDir(), TRAFFIC_FILE).delete();
+    }
+
+    /** "uploaded downloaded" in bytes, empty when no tunnel is up. */
+    public static String traffic(Context context) {
+        if (!isRunning(context)) {
+            return "";
+        }
+        try (java.io.FileInputStream in = new java.io.FileInputStream(new File(context.getFilesDir(), TRAFFIC_FILE))) {
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        } catch (IOException e) {
+            return "";
         }
     }
 

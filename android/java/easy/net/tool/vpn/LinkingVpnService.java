@@ -33,8 +33,6 @@ public final class LinkingVpnService extends VpnService {
     public static final String ACTION_STOP = "easy.net.tool.vpn.STOP";
     /** Path of the Xray JSON config (required). */
     public static final String EXTRA_CONFIG = "config";
-    /** Folder of geoip.dat and geosite.dat, when Xray's config uses them. */
-    public static final String EXTRA_ASSET_DIR = "assetDir";
     /** Port of the config's SOCKS5 inbound; 10808 when absent. */
     public static final String EXTRA_SOCKS_PORT = "socksPort";
     /** The notification's title, text and disconnect button, in the app's language; the app name when absent. */
@@ -128,14 +126,73 @@ public final class LinkingVpnService extends VpnService {
                 throw new IOException("no Xray config: " + config);
             }
             int port = intent.getIntExtra(EXTRA_SOCKS_PORT, DEFAULT_SOCKS_PORT);
-            startXray(config, intent.getStringExtra(EXTRA_ASSET_DIR), port);
+            File assets = geoAssets();
+            startXray(config, assets.getPath(), port);
             establish(port);
             VpnSession.write(this, VpnSession.CONNECTED, null);
+            startTrafficReport();
             Log.i(TAG, "connected");
         } catch (Exception e) {
             Log.e(TAG, "start failed", e);
             stopTunnel(e.getMessage() == null ? e.toString() : e.getMessage());
         }
+    }
+
+    /**
+     * The folder Xray reads geoip.dat and geosite.dat from. The APK's copies (assets/geo/) are put there when the
+     * app is new or has none; a file the app updated later is left as it is until the next version of the app.
+     */
+    private File geoAssets() throws IOException {
+        File dir = new File(getFilesDir(), "xray-assets");
+        dir.mkdirs();
+        File marker = new File(dir, ".version");
+        String version;
+        try {
+            version = String.valueOf(getPackageManager().getPackageInfo(getPackageName(), 0).getLongVersionCode());
+        } catch (android.content.pm.PackageManager.NameNotFoundException e) {
+            throw new IOException("own package not found", e);
+        }
+        String have = marker.isFile() ? new String(java.nio.file.Files.readAllBytes(marker.toPath()), StandardCharsets.UTF_8) : "";
+        for (String name : new String[] {"geoip.dat", "geosite.dat"}) {
+            File target = new File(dir, name);
+            if (target.isFile() && have.equals(version)) {
+                continue;
+            }
+            try (java.io.InputStream in = getAssets().open("geo/" + name);
+                 FileOutputStream out = new FileOutputStream(target)) {
+                in.transferTo(out);
+            } catch (IOException e) {
+                if (!target.isFile()) {
+                    throw new IOException(name + " is not in this build", e);
+                }
+            }
+        }
+        java.nio.file.Files.write(marker.toPath(), version.getBytes(StandardCharsets.UTF_8));
+        return dir;
+    }
+
+    /** Once a second, the bytes the tunnel has carried, to the file the UI reads. */
+    private void startTrafficReport() {
+        Thread t = new Thread(() -> {
+            while (true) {
+                synchronized (lock) {
+                    if (!active || !tunnelStarted) {
+                        return;
+                    }
+                }
+                long[] s = Tun2Socks.TProxyGetStats();
+                if (s != null && s.length >= 4) {
+                    VpnSession.writeTraffic(this, s[1], s[3]);
+                }
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException e) {
+                    return;
+                }
+            }
+        }, "vpn-traffic");
+        t.setDaemon(true);
+        t.start();
     }
 
     private void startXray(String config, String assetDir, int port) throws IOException, InterruptedException {
@@ -316,6 +373,8 @@ public final class LinkingVpnService extends VpnService {
             }
         }
         new File(getFilesDir(), "xray.pid").delete();
+        new File(getFilesDir(), "xray.json").delete(); // it holds the node's secrets
+        VpnSession.clearTraffic(this);
         VpnSession.write(this, error == null ? null : VpnSession.ERROR, error);
         session.release();
         stopForeground(STOP_FOREGROUND_REMOVE);

@@ -5,3 +5,4 @@
 .DS_Store
 /android/jniLibs/
 /.native/
+/resources/geo/

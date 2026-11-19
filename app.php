@@ -9,6 +9,8 @@ require __DIR__ . '/src/Icons.php';
 require __DIR__ . '/src/Store.php';
 require __DIR__ . '/src/ProxyLink.php';
 require __DIR__ . '/src/Profiles.php';
+require __DIR__ . '/src/XrayConfig.php';
+require __DIR__ . '/src/Vpn.php';
 require __DIR__ . '/src/LinkingApp.php';
 
 $app = new LinkingApp(store: Store::inUserData());
