@@ -102,6 +102,17 @@ jobs:
           (cd build && sha256sum Linking.apk "${APK_VERSIONED}" > SHA256SUMS)
           ls -lh build/
 
+      - name: Build the Google Play bundle (aab)
+        working-directory: agc_linking
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          ANDROID_KEYSTORE_PASS: ${{ secrets.ANDROID_KEYSTORE_PASS }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASS: ${{ secrets.ANDROID_KEY_PASS }}
+        run: |
+          php -d ffi.enable=1 ../myphp/bin/myphp build -platform android/arm64 -format aab -channel play .
+          ls -lh build/*.aab
+
       - name: Publish APK to GitHub Releases
         working-directory: agc_linking
         env:
@@ -124,6 +135,7 @@ jobs:
 
           gh release upload "$TAG" \
             build/Linking.apk \
+            build/Linking.aab \
             "build/${APK_VERSIONED}" \
             build/SHA256SUMS \
             --clobber
