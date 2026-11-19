@@ -50,9 +50,9 @@ jobs:
       - name: Build VPN native libraries (Xray, hev-socks5-tunnel)
         working-directory: agc_linking
         env:
-          ANDROID_NDK: ${{ env.ANDROID_NDK_LATEST_HOME }}
           ABIS: arm64-v8a
-        run: scripts/build-native.sh
+        # the runner's own variable: the workflow's env context does not hold it, so it is read in the shell
+        run: ANDROID_NDK="$ANDROID_NDK_LATEST_HOME" scripts/build-native.sh
 
       - name: Fetch routing data (geoip, geosite)
         working-directory: agc_linking
@@ -87,6 +87,13 @@ jobs:
       - name: Run Headless UI Tests
         working-directory: agc_linking
         run: php -d ffi.enable=1 tests/ui_test.php
+
+      - name: Run the proxy and VPN tests
+        working-directory: agc_linking
+        run: |
+          for t in xray vpn clash singbox shadowrocket routing_data; do
+            php -d ffi.enable=1 "tests/${t}_test.php"
+          done
 
       - name: Build Android APK via myphp
         working-directory: agc_linking
