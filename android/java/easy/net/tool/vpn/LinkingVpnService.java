@@ -142,23 +142,20 @@ public final class LinkingVpnService extends VpnService {
     }
 
     /**
-     * The folder Xray reads geoip.dat and geosite.dat from. The APK's copies (assets/geo/) are put there when the
-     * app is new or has none; a file the app updated later is left as it is until the next version of the app.
+     * The folder Xray reads geoip.dat and geosite.dat from. The APK's copies (assets/geo/) are put there when a file is
+     * missing or older than this version of the app (a newer app brings newer data); one the app downloaded since stays.
      */
     private File geoAssets() throws IOException {
-        File dir = new File(getFilesDir(), "xray-assets");
-        dir.mkdirs();
-        File marker = new File(dir, ".version");
-        String version;
+        File dir = new File(VpnApi.assetDir(this));
+        long installed;
         try {
-            version = String.valueOf(getPackageManager().getPackageInfo(getPackageName(), 0).getLongVersionCode());
+            installed = getPackageManager().getPackageInfo(getPackageName(), 0).lastUpdateTime;
         } catch (android.content.pm.PackageManager.NameNotFoundException e) {
             throw new IOException("own package not found", e);
         }
-        String have = marker.isFile() ? new String(java.nio.file.Files.readAllBytes(marker.toPath()), StandardCharsets.UTF_8) : "";
         for (String name : new String[] {"geoip.dat", "geosite.dat"}) {
             File target = new File(dir, name);
-            if (target.isFile() && have.equals(version)) {
+            if (target.isFile() && target.lastModified() >= installed) {
                 continue;
             }
             try (java.io.InputStream in = getAssets().open("geo/" + name);
@@ -170,7 +167,6 @@ public final class LinkingVpnService extends VpnService {
                 }
             }
         }
-        java.nio.file.Files.write(marker.toPath(), version.getBytes(StandardCharsets.UTF_8));
         return dir;
     }
 

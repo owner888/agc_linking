@@ -37,6 +37,12 @@ final class Vpn
             Jni::activity(), $json, $socksPort, $apiPort, $detailedTraffic, $title, $text, $stopLabel);
     }
 
+    /** The folder Xray reads geoip.dat and geosite.dat from. */
+    public static function assetDir(): string
+    {
+        return (string) Jni::callStatic(self::API, 'assetDir', '(' . self::CONTEXT . ')Ljava/lang/String;', Jni::activity());
+    }
+
     public static function stop(): void
     {
         Jni::callStatic(self::API, 'stop', '(' . self::CONTEXT . ')V', Jni::activity());

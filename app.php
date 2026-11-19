@@ -11,6 +11,7 @@ require __DIR__ . '/src/ProxyLink.php';
 require __DIR__ . '/src/Profiles.php';
 require __DIR__ . '/src/XrayConfig.php';
 require __DIR__ . '/src/Vpn.php';
+require __DIR__ . '/src/RoutingData.php';
 require __DIR__ . '/src/LinkingApp.php';
 
 // The data folder is named after the app: its name is set before the store is opened

@@ -213,6 +213,12 @@ $configScreen = fn() => ListView()(
                 Slider(value: $this->latencyTimeout, in: [1, 15], step: 1),
             ),
         ),
+        Vpn::available()
+            ? Section(header: 'Routing Data', footer: $this->routingDataMessage !== '' ? $this->routingDataMessage : 'geoip and geosite, for the Rule mode. A connection that is up takes new data when it connects again.')(
+                LabeledContent('geoip / geosite', $this->routingDataStatus()),
+                Button($this->updatingRoutingData ? 'Updating…' : 'Update Now', action: fn() => $this->updateRoutingData(), systemImage: 'arrow.triangle.2.circlepath')->disabled($this->updatingRoutingData),
+            )
+            : null,
         Section(header: 'Ping & Probe')(
             VStack(alignment: HorizontalAlignment::leading, spacing: 4)(
                 LabeledContent('TTL', (string) $this->ttl),

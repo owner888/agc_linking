@@ -42,6 +42,13 @@ public final class VpnApi {
         context.startActivity(launch);
     }
 
+    /** The folder Xray reads geoip.dat and geosite.dat from; the app's updates of them are written there. */
+    public static String assetDir(Context context) {
+        File dir = new File(context.getFilesDir(), "xray-assets");
+        dir.mkdirs();
+        return dir.getPath();
+    }
+
     public static void stop(Context context) {
         context.startService(new Intent(context, LinkingVpnService.class).setAction(LinkingVpnService.ACTION_STOP));
     }

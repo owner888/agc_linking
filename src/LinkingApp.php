@@ -119,6 +119,9 @@ final class LinkingApp
     public string $latencyMethod = 'TCP';
     public string $latencyUrl = 'http://www.gstatic.com/generate_204';
     public int $latencyTimeout = 5; // seconds
+    // The routing data (geoip, geosite) of the Rule mode: the app's own copy, or one fetched later
+    public bool $updatingRoutingData = false;
+    public string $routingDataMessage = '';
     private const PROBE_PORT = 10900; // the first SOCKS port of a CONNECT test, one more for each proxy
 
     // The connection: 'disconnected' | 'connecting' | 'connected'. Made by the VPN service of the Android app (Vpn).
@@ -949,6 +952,56 @@ final class LinkingApp
             }
         }
         return null;
+    }
+
+    /** What the Routing Data row says: the date of the last update, or that the app's own copy is in use. */
+    public function routingDataStatus(): string
+    {
+        if (!Vpn::available()) {
+            return '-';
+        }
+        try {
+            return (new RoutingData(Vpn::assetDir()))->updatedOn() ?? 'Built in';
+        } catch (\Throwable) {
+            return '-';
+        }
+    }
+
+    /** Fetches newer routing data; a connection that is up has its own copy, and takes the new one when it connects again. */
+    public function updateRoutingData(): void
+    {
+        if ($this->updatingRoutingData || !Vpn::available()) {
+            return;
+        }
+        $this->updatingRoutingData = true;
+        $this->routingDataMessage = '';
+        try {
+            $dir = Vpn::assetDir(); // asked here: a Java call made inside the fiber below overruns the fiber's small C stack and aborts the app
+        } catch (\Throwable $e) {
+            $this->updatingRoutingData = false;
+            $this->routingDataMessage = 'The routing data could not be updated: ' . $e->getMessage();
+            return;
+        }
+        App::go(function () use ($dir): void {
+            try {
+                $data = new RoutingData($dir);
+                $error = $data->update(function (string $url): string {
+                    [$body, $response] = URLSession::shared()->data(new URLRequest($url, 'GET', ['User-Agent' => 'Linking/' . $this->currentVersion], null, 120.0));
+                    if ($response->statusCode < 200 || $response->statusCode >= 300) {
+                        throw new \RuntimeException("answered {$response->statusCode}");
+                    }
+                    return $body;
+                }, date('Y-m-d'));
+                $this->routingDataMessage = $error ?? ($this->connection === 'disconnected' ? 'Updated.' : 'Updated: connect again to use it.');
+                $this->appendLog($error === null ? 'INFO' : 'ERROR', $error ?? 'Updated the routing data');
+            } catch (\Throwable $e) {
+                $this->routingDataMessage = 'The routing data could not be updated: ' . $e->getMessage();
+                $this->appendLog('ERROR', $this->routingDataMessage);
+            } finally {
+                $this->updatingRoutingData = false;
+                $this->window?->invalidate();
+            }
+        });
     }
 
     /** Measures the latency of each proxy of the active profile, by the method of the settings. */
