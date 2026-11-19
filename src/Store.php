@@ -11,10 +11,20 @@ final class Store
 {
     public function __construct(private readonly ?string $path = null) {}
 
-    /** The store in the app's data folder. */
-    public static function inUserData(): self
+    /**
+     * The store in the app's data folder. $legacyName is the name the folder had before the app set its own (App::name()
+     * read before App::setName): a store found there, and none in the folder now, is moved over.
+     */
+    public static function inUserData(?string $legacyName = null): self
     {
-        return new self(App::path(PathName::UserData) . '/linking.json');
+        $path = App::path(PathName::UserData) . '/linking.json';
+        if ($legacyName !== null && !is_file($path)) {
+            $old = App::path(PathName::AppData) . '/' . $legacyName . '/linking.json';
+            if (is_file($old) && @rename($old, $path)) {
+                @rmdir(dirname($old));
+            }
+        }
+        return new self($path);
     }
 
     /** @return array<string, mixed> */

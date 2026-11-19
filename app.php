@@ -13,9 +13,12 @@ require __DIR__ . '/src/XrayConfig.php';
 require __DIR__ . '/src/Vpn.php';
 require __DIR__ . '/src/LinkingApp.php';
 
-$app = new LinkingApp(store: Store::inUserData());
-
+// The data folder is named after the app: its name is set before the store is opened (the folder an earlier version
+// opened under the default name is moved over)
+$legacyName = App::name();
 App::setName('Linking');
+$app = new LinkingApp(store: Store::inUserData($legacyName));
+
 // What a person set is kept when the app goes to the background or quits
 App::onDidResignActive(fn() => $app->save());
 App::onDidBecomeActive(fn() => $app->vpnScreenBack());
