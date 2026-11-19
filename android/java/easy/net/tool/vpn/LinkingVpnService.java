@@ -35,6 +35,9 @@ public final class LinkingVpnService extends VpnService {
     public static final String EXTRA_CONFIG = "config";
     /** Port of the config's SOCKS5 inbound; 10808 when absent. */
     public static final String EXTRA_SOCKS_PORT = "socksPort";
+    /** Port of the config's stats API, and whether to ask it for the traffic by outbound (false when absent). */
+    public static final String EXTRA_API_PORT = "apiPort";
+    public static final String EXTRA_DETAILED_TRAFFIC = "detailedTraffic";
     /** The notification's title, text and disconnect button, in the app's language; the app name when absent. */
     public static final String EXTRA_TITLE = "title";
     public static final String EXTRA_TEXT = "text";
@@ -130,7 +133,7 @@ public final class LinkingVpnService extends VpnService {
             startXray(config, assets.getPath(), port);
             establish(port);
             VpnSession.write(this, VpnSession.CONNECTED, null);
-            startTrafficReport();
+            startTrafficReport(intent.getBooleanExtra(EXTRA_DETAILED_TRAFFIC, false) ? intent.getIntExtra(EXTRA_API_PORT, 0) : 0);
             Log.i(TAG, "connected");
         } catch (Exception e) {
             Log.e(TAG, "start failed", e);
@@ -171,8 +174,8 @@ public final class LinkingVpnService extends VpnService {
         return dir;
     }
 
-    /** Once a second, the bytes the tunnel has carried, to the file the UI reads. */
-    private void startTrafficReport() {
+    /** Once a second, the bytes the tunnel has carried, to the file the UI reads; with an apiPort, split by outbound too. */
+    private void startTrafficReport(int apiPort) {
         Thread t = new Thread(() -> {
             while (true) {
                 synchronized (lock) {
@@ -182,7 +185,8 @@ public final class LinkingVpnService extends VpnService {
                 }
                 long[] s = Tun2Socks.TProxyGetStats();
                 if (s != null && s.length >= 4) {
-                    VpnSession.writeTraffic(this, s[1], s[3]);
+                    long[] split = apiPort > 0 ? outboundTraffic(apiPort) : null;
+                    VpnSession.writeTraffic(this, s[1], s[3], split);
                 }
                 try {
                     Thread.sleep(1000);
@@ -193,6 +197,30 @@ public final class LinkingVpnService extends VpnService {
         }, "vpn-traffic");
         t.setDaemon(true);
         t.start();
+    }
+
+    /** What Xray counted for the outbounds proxy and direct: proxy up, proxy down, direct up, direct down; null when it did not answer. */
+    private long[] outboundTraffic(int apiPort) {
+        try {
+            File exe = new File(getApplicationInfo().nativeLibraryDir, "libxray.so");
+            Process p = new ProcessBuilder(exe.getPath(), "api", "statsquery", "-s", "127.0.0.1:" + apiPort).redirectErrorStream(true).start();
+            String out = new String(p.getInputStream().readAllBytes(), StandardCharsets.UTF_8);
+            p.waitFor();
+            long[] r = new long[4];
+            org.json.JSONArray stats = new org.json.JSONObject(out).optJSONArray("stat");
+            for (int i = 0; stats != null && i < stats.length(); i++) {
+                org.json.JSONObject e = stats.getJSONObject(i);
+                String[] name = e.optString("name").split(">>>"); // outbound>>>proxy>>>traffic>>>uplink
+                if (name.length != 4 || !name[0].equals("outbound") || !(name[1].equals("proxy") || name[1].equals("direct"))) {
+                    continue;
+                }
+                int slot = (name[1].equals("proxy") ? 0 : 2) + (name[3].equals("uplink") ? 0 : 1);
+                r[slot] = e.optLong("value");
+            }
+            return r;
+        } catch (IOException | InterruptedException | org.json.JSONException e) {
+            return null;
+        }
     }
 
     private void startXray(String config, String assetDir, int port) throws IOException, InterruptedException {

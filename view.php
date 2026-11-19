@@ -197,6 +197,7 @@ $configScreen = fn() => ListView()(
             )->pickerStyle(PickerStyle::segmented),
             Toggle('Enable TUN Mode', isOn: $this->tunEnabled),
             Toggle('IPv6 Route', isOn: $this->ipv6Enabled),
+            Toggle('Proxy / Direct Traffic', isOn: $this->detailedTraffic),
             LabeledContent('Mixed Port', (string) $this->mixedPort),
         ),
         Section(header: 'Ping & Probe')(

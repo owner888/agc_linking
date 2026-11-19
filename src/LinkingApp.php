@@ -122,6 +122,7 @@ final class LinkingApp
     public string $routingMode = 'Rule'; // 'Rule' | 'Global' | 'Direct'
     public bool $tunEnabled = true;
     public bool $ipv6Enabled = false;
+    public bool $detailedTraffic = false; // count the proxy's and the direct traffic apart: Xray is asked every second, so it is off by default
     public int $mixedPort = 7890;
 
     /** @var list<array{id: int, time: string, level: string, message: string}> */
@@ -861,7 +862,7 @@ final class LinkingApp
         foreach (['ipLibrary', 'routingMode', 'skippedVersion', 'selectedDns', 'toolType', 'hostInput'] as $key) {
             if (isset($data[$key]) && is_string($data[$key])) { $this->$key = $data[$key]; }
         }
-        foreach (['tunEnabled', 'ipv6Enabled'] as $key) {
+        foreach (['tunEnabled', 'ipv6Enabled', 'detailedTraffic'] as $key) {
             if (isset($data[$key])) { $this->$key = (bool) $data[$key]; }
         }
         $this->nextFavId = max(array_column($this->favorites, 'id') ?: [0]) + 1;
@@ -887,7 +888,7 @@ final class LinkingApp
             'ttl' => $this->ttl, 'timeOut' => $this->timeOut, 'interval' => $this->interval, 'packetSize' => $this->packetSize,
             'mixedPort' => $this->mixedPort, 'ipLibrary' => $this->ipLibrary, 'routingMode' => $this->routingMode,
             'skippedVersion' => $this->skippedVersion, 'selectedDns' => $this->selectedDns, 'toolType' => $this->toolType,
-            'hostInput' => $this->hostInput, 'tunEnabled' => $this->tunEnabled, 'ipv6Enabled' => $this->ipv6Enabled,
+            'hostInput' => $this->hostInput, 'tunEnabled' => $this->tunEnabled, 'ipv6Enabled' => $this->ipv6Enabled, 'detailedTraffic' => $this->detailedTraffic,
         ]);
     }
 

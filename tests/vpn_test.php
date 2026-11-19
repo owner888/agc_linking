@@ -14,6 +14,8 @@ function same(mixed $want, mixed $got, string $what): void
 
 same(['up' => 1200, 'down' => 3400000], Vpn::parseTraffic('1200 3400000'), 'traffic');
 same(['up' => 0, 'down' => 0], Vpn::parseTraffic("0 0\n"), 'traffic with a newline');
+same(['up' => 1, 'down' => 2, 'proxyUp' => 3, 'proxyDown' => 4, 'directUp' => 5, 'directDown' => 6], Vpn::parseTraffic('1 2 3 4 5 6'), 'traffic by outbound');
+same(null, Vpn::parseTraffic('1 2 3'), 'a half split');
 same(null, Vpn::parseTraffic(''), 'no tunnel, no traffic');
 same(null, Vpn::parseTraffic('12'), 'one number');
 same(null, Vpn::parseTraffic('a b'), 'not numbers');

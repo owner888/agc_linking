@@ -99,10 +99,14 @@ public final class VpnSession {
         }
     }
 
-    /** The bytes the tunnel has carried since it came up, for the UI to read: "uploaded downloaded". */
-    static void writeTraffic(Context context, long tx, long rx) {
+    /** The bytes the tunnel has carried since it came up, for the UI to read: "uploaded downloaded", then, when asked for, proxy up and down, direct up and down. */
+    static void writeTraffic(Context context, long tx, long rx, long[] byOutbound) {
+        StringBuilder text = new StringBuilder().append(tx).append(' ').append(rx);
+        for (int i = 0; byOutbound != null && i < byOutbound.length; i++) {
+            text.append(' ').append(byOutbound[i]);
+        }
         try (FileOutputStream out = new FileOutputStream(new File(context.getFilesDir(), TRAFFIC_FILE))) {
-            out.write((tx + " " + rx).getBytes(StandardCharsets.UTF_8));
+            out.write(text.toString().getBytes(StandardCharsets.UTF_8));
         } catch (IOException ignored) {
             // a count missed is made up by the next
         }
@@ -112,7 +116,7 @@ public final class VpnSession {
         new File(context.getFilesDir(), TRAFFIC_FILE).delete();
     }
 
-    /** "uploaded downloaded" in bytes, empty when no tunnel is up. */
+    /** The same text, empty when no tunnel is up. */
     public static String traffic(Context context) {
         if (!isRunning(context)) {
             return "";
