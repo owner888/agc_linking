@@ -38,6 +38,13 @@ public final class LinkingVpnService extends VpnService {
     /** Port of the config's stats API, and whether to ask it for the traffic by outbound (false when absent). */
     public static final String EXTRA_API_PORT = "apiPort";
     public static final String EXTRA_DETAILED_TRAFFIC = "detailedTraffic";
+    /** Which apps go through the tunnel: APPS_ALL, APPS_ONLY (the packages of EXTRA_APPS) or APPS_EXCEPT (all but them). */
+    public static final String EXTRA_APP_MODE = "appMode";
+    /** Comma-separated package names, for APPS_ONLY and APPS_EXCEPT. */
+    public static final String EXTRA_APPS = "apps";
+    public static final String APPS_ALL = "all";
+    public static final String APPS_ONLY = "only";
+    public static final String APPS_EXCEPT = "except";
     /** The notification's title, text and disconnect button, in the app's language; the app name when absent. */
     public static final String EXTRA_TITLE = "title";
     public static final String EXTRA_TEXT = "text";
@@ -131,7 +138,7 @@ public final class LinkingVpnService extends VpnService {
             int port = intent.getIntExtra(EXTRA_SOCKS_PORT, DEFAULT_SOCKS_PORT);
             File assets = geoAssets();
             startXray(config, assets.getPath(), port);
-            establish(port);
+            establish(port, intent.getStringExtra(EXTRA_APP_MODE), intent.getStringExtra(EXTRA_APPS));
             VpnSession.write(this, VpnSession.CONNECTED, null);
             startTrafficReport(intent.getBooleanExtra(EXTRA_DETAILED_TRAFFIC, false) ? intent.getIntExtra(EXTRA_API_PORT, 0) : 0);
             Log.i(TAG, "connected");
@@ -320,7 +327,7 @@ public final class LinkingVpnService extends VpnService {
         }
     }
 
-    private void establish(int socksPort) throws IOException {
+    private void establish(int socksPort, String appMode, String apps) throws IOException {
         Builder b = new Builder()
             .setSession(getApplicationInfo().loadLabel(getPackageManager()).toString())
             .setMtu(MTU)
@@ -331,11 +338,7 @@ public final class LinkingVpnService extends VpnService {
             .addRoute("::", 0)
             .addDnsServer("1.1.1.1")
             .addDnsServer("8.8.8.8");
-        try {
-            b.addDisallowedApplication(getPackageName());
-        } catch (android.content.pm.PackageManager.NameNotFoundException e) {
-            throw new IOException("own package not found", e);
-        }
+        applyApps(b, appMode, apps);
         ParcelFileDescriptor fd = b.establish();
         if (fd == null) {
             throw new IOException("the VPN permission was revoked");
@@ -354,6 +357,43 @@ public final class LinkingVpnService extends VpnService {
         }
         synchronized (lock) {
             tunnelStarted = true;
+        }
+    }
+
+    /**
+     * Which apps the tunnel takes. This app is never one of them: Xray's own sockets to the node would go round into the
+     * tunnel. A VPN either allows some apps or disallows some, not both: "only" allows the chosen (this app, not among
+     * them, is left out by that), every other mode disallows this app and, for "except", the chosen.
+     */
+    private void applyApps(Builder b, String appMode, String apps) throws IOException {
+        java.util.List<String> packages = new java.util.ArrayList<>();
+        for (String pkg : apps == null ? new String[0] : apps.split(",")) {
+            pkg = pkg.trim();
+            if (!pkg.isEmpty() && !pkg.equals(getPackageName())) {
+                packages.add(pkg);
+            }
+        }
+        boolean only = APPS_ONLY.equals(appMode);
+        if (only && packages.isEmpty()) {
+            throw new IOException("no app is chosen to go through the connection");
+        }
+        try {
+            if (!only) {
+                b.addDisallowedApplication(getPackageName());
+            }
+            for (String pkg : packages) {
+                try {
+                    if (only) {
+                        b.addAllowedApplication(pkg);
+                    } else if (APPS_EXCEPT.equals(appMode)) {
+                        b.addDisallowedApplication(pkg);
+                    }
+                } catch (android.content.pm.PackageManager.NameNotFoundException e) {
+                    Log.w(TAG, pkg + " is not installed: left out");
+                }
+            }
+        } catch (android.content.pm.PackageManager.NameNotFoundException e) {
+            throw new IOException("own package not found", e);
         }
     }
 

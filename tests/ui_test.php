@@ -160,6 +160,22 @@ same('disconnected', $app->connection, 'Another proxy ends the connection');
 same(99, $app->selectedNodeId, 'and is the one chosen');
 $app->selectNode($app->profiles[0]['nodes'][0]['id']);
 
+// 5c. Per-App Proxy: the chosen apps are kept, searched, and a mode that needs some refuses to connect with none
+$app->installedApps = [['package' => 'org.example.mail', 'label' => 'Mail'], ['package' => 'org.example.maps', 'label' => 'Maps'], ['package' => 'org.example.zed', 'label' => 'Notes']];
+$app->toggleApp('org.example.maps');
+same(['org.example.maps'], $app->appPackages, 'an app is chosen');
+$app->toggleApp('org.example.mail');
+$app->toggleApp('org.example.maps');
+same(['org.example.mail'], $app->appPackages, 'and chosen no more');
+same('1 selected', $app->appsSummary(), 'the summary counts them');
+$app->appSearch = 'ma';
+same(['org.example.mail', 'org.example.maps'], array_column($app->matchingApps(), 'package'), 'the search matches the name');
+$app->appSearch = 'ZED';
+same(['org.example.zed'], array_column($app->matchingApps(), 'package'), 'and the package, whatever the case');
+$app->appSearch = '';
+$app->appPackages = [];
+same('None', $app->appsSummary(), 'none chosen');
+
 // 6. Switch to Settings tab and test Reset to Default & Standalone DMG/APK In-App Update Capsule
 if (PHP_OS_FAMILY === 'Darwin') {
     same('dmg', Device::channel(), 'macOS standalone build defaults to dmg channel');

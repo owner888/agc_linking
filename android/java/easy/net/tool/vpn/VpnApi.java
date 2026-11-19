@@ -21,11 +21,13 @@ public final class VpnApi {
      * @param apiPort    port of the config's stats API when detailedTraffic
      * @param detailedTraffic also count what went by the proxy and what by the direct outbound; Xray is asked about it
      *                   every second (a new process each time), so it is off unless the person asks
+     * @param appMode    which apps go through it: "all", "only" the packages of apps, or all "except" them
+     * @param apps       comma-separated package names, for "only" and "except"
      * @param title      notification title, empty for the app's name
      * @param text       notification text, empty for none
      * @param stopLabel  label of the notification's disconnect button, empty for no button
      */
-    public static void start(Context context, String configJson, int socksPort, int apiPort, boolean detailedTraffic, String title, String text, String stopLabel)
+    public static void start(Context context, String configJson, int socksPort, int apiPort, boolean detailedTraffic, String appMode, String apps, String title, String text, String stopLabel)
             throws IOException {
         File config = new File(context.getFilesDir(), "xray.json");
         try (FileOutputStream out = new FileOutputStream(config)) {
@@ -36,6 +38,8 @@ public final class VpnApi {
             .putExtra(LinkingVpnService.EXTRA_SOCKS_PORT, socksPort)
             .putExtra(LinkingVpnService.EXTRA_API_PORT, apiPort)
             .putExtra(LinkingVpnService.EXTRA_DETAILED_TRAFFIC, detailedTraffic)
+            .putExtra(LinkingVpnService.EXTRA_APP_MODE, appMode)
+            .putExtra(LinkingVpnService.EXTRA_APPS, apps)
             .putExtra(LinkingVpnService.EXTRA_TITLE, title)
             .putExtra(LinkingVpnService.EXTRA_TEXT, text)
             .putExtra(LinkingVpnService.EXTRA_STOP_LABEL, stopLabel);
@@ -47,6 +51,21 @@ public final class VpnApi {
         File dir = new File(context.getFilesDir(), "xray-assets");
         dir.mkdirs();
         return dir.getPath();
+    }
+
+    /** The apps with an icon on the launcher, but this one, one per line: "package", a tab, the name; by name. */
+    public static String installedApps(Context context) {
+        android.content.pm.PackageManager pm = context.getPackageManager();
+        Intent main = new Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER);
+        java.util.TreeMap<String, String> byName = new java.util.TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        for (android.content.pm.ResolveInfo info : pm.queryIntentActivities(main, 0)) {
+            String pkg = info.activityInfo.packageName;
+            if (!pkg.equals(context.getPackageName())) {
+                String label = info.loadLabel(pm).toString().replace('\t', ' ').replace('\n', ' ');
+                byName.put(label + "\u0000" + pkg, pkg + "\t" + label);
+            }
+        }
+        return String.join("\n", byName.values());
     }
 
     public static void stop(Context context) {

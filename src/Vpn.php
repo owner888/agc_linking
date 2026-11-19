@@ -15,6 +15,9 @@ final class Vpn
     public const CONNECTING = 'connecting';
     public const CONNECTED = 'connected';
     public const ERROR = 'error';
+    public const APPS_ALL = 'all';
+    public const APPS_ONLY = 'only';
+    public const APPS_EXCEPT = 'except';
 
     private const API = 'easy.net.tool.vpn.VpnApi';
     private const CONTEXT = 'Landroid/content/Context;';
@@ -28,13 +31,14 @@ final class Vpn
      * Starts the tunnel over an Xray config (XrayConfig::build). The system's permission dialog comes first when the
      * app has none; the outcome is read with state(). $detailedTraffic: traffic() also tells what went by the proxy and
      * what directly, which has Xray asked every second (a process each time), so it is the person's choice.
+     * $appMode: which apps go through it, APPS_ALL, APPS_ONLY the packages of $apps, or APPS_EXCEPT them.
      */
-    public static function start(array $config, int $socksPort = 10808, int $apiPort = 10085, bool $detailedTraffic = false, string $title = '', string $text = '', string $stopLabel = ''): void
+    public static function start(array $config, int $socksPort = 10808, int $apiPort = 10085, bool $detailedTraffic = false, string $appMode = self::APPS_ALL, array $apps = [], string $title = '', string $text = '', string $stopLabel = ''): void
     {
         $json = json_encode($config, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR);
         Jni::callStatic(self::API, 'start',
-            '(' . self::CONTEXT . 'Ljava/lang/String;IIZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;)V',
-            Jni::activity(), $json, $socksPort, $apiPort, $detailedTraffic, $title, $text, $stopLabel);
+            '(' . self::CONTEXT . 'Ljava/lang/String;IIZLjava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V',
+            Jni::activity(), $json, $socksPort, $apiPort, $detailedTraffic, $appMode, implode(',', $apps), $title, $text, $stopLabel);
     }
 
     /** The folder Xray reads geoip.dat and geosite.dat from. */
@@ -53,6 +57,25 @@ final class Vpn
     {
         $s = (string) Jni::callStatic(self::API, 'state', '(' . self::CONTEXT . ')Ljava/lang/String;', Jni::activity());
         return in_array($s, [self::CONNECTING, self::CONNECTED, self::ERROR], true) ? $s : self::STOPPED;
+    }
+
+    /** @return list<array{package: string, label: string}> the apps with an icon on the launcher, by name */
+    public static function installedApps(): array
+    {
+        return self::parseApps((string) Jni::callStatic(self::API, 'installedApps', '(' . self::CONTEXT . ')Ljava/lang/String;', Jni::activity()));
+    }
+
+    /** @return list<array{package: string, label: string}> "package, a tab, the name" a line each */
+    public static function parseApps(string $text): array
+    {
+        $apps = [];
+        foreach (preg_split('/\R/', $text) ?: [] as $line) {
+            [$package, $label] = array_pad(explode("\t", $line, 2), 2, '');
+            if ($package !== '') {
+                $apps[] = ['package' => $package, 'label' => $label !== '' ? $label : $package];
+            }
+        }
+        return $apps;
     }
 
     /** What went wrong, after state() said error; empty otherwise. */

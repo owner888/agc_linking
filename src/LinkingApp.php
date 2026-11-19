@@ -140,6 +140,14 @@ final class LinkingApp
     public string $routingMode = 'Rule'; // 'Rule' | 'Global' | 'Direct'
     public bool $tunEnabled = true;
     public bool $ipv6Enabled = false;
+    // Which apps go through the connection: all, only the chosen, or all but them (Android's VPN allows or disallows apps)
+    public string $appMode = 'all'; // 'all' | 'only' | 'except'
+    /** @var list<string> package names */
+    public array $appPackages = [];
+    public bool $appsOpen = false;
+    public string $appSearch = '';
+    /** @var list<array{package: string, label: string}> */
+    public array $installedApps = [];
     public bool $detailedTraffic = false; // count the proxy's and the direct traffic apart: Xray is asked every second, so it is off by default
     public int $mixedPort = 7890;
 
@@ -657,13 +665,17 @@ final class LinkingApp
             $this->refuseConnection('This profile was added by an earlier version: remove it and add it again.');
             return;
         }
+        if ($this->appMode === 'only' && $this->appPackages === []) {
+            $this->refuseConnection('Per-App Proxy is set to Only Selected, but no app is selected.');
+            return;
+        }
         $config = $node === null ? null : XrayConfig::build($node['link'] ?? '', $this->routingMode, self::SOCKS_PORT, self::API_PORT);
         if ($node === null || $config === null) {
             $this->refuseConnection(($node['protocol'] ?? 'This') . ' proxies are not supported yet.');
             return;
         }
         try {
-            Vpn::start($config, self::SOCKS_PORT, self::API_PORT, $this->detailedTraffic, 'Linking', $node['name'], 'Disconnect');
+            Vpn::start($config, self::SOCKS_PORT, self::API_PORT, $this->detailedTraffic, $this->appMode, $this->appPackages, 'Linking', $node['name'], 'Disconnect');
         } catch (\Throwable $e) {
             $this->refuseConnection('The connection could not be started: ' . $e->getMessage());
             return;
@@ -954,6 +966,46 @@ final class LinkingApp
         return null;
     }
 
+    /** Opens the list of apps to choose from. */
+    public function openApps(): void
+    {
+        if (!Vpn::available()) {
+            return;
+        }
+        try {
+            $this->installedApps = Vpn::installedApps();
+        } catch (\Throwable $e) {
+            $this->refuseConnection('The apps could not be listed: ' . $e->getMessage());
+            return;
+        }
+        $this->appSearch = '';
+        $this->appsOpen = true;
+    }
+
+    public function toggleApp(string $package): void
+    {
+        $this->appPackages = in_array($package, $this->appPackages, true)
+            ? array_values(array_diff($this->appPackages, [$package]))
+            : [...$this->appPackages, $package];
+        $this->save();
+    }
+
+    /** The installed apps the search matches: by name or by package. @return list<array{package: string, label: string}> */
+    public function matchingApps(): array
+    {
+        $q = mb_strtolower(trim($this->appSearch));
+        return $q === '' ? $this->installedApps : array_values(array_filter(
+            $this->installedApps,
+            fn(array $a) => str_contains(mb_strtolower($a['label']), $q) || str_contains(mb_strtolower($a['package']), $q),
+        ));
+    }
+
+    /** What the Apps row says: how many are chosen. */
+    public function appsSummary(): string
+    {
+        return $this->appPackages === [] ? 'None' : count($this->appPackages) . ' selected';
+    }
+
     /** What the Routing Data row says: the date of the last update, or that the app's own copy is in use. */
     public function routingDataStatus(): string
     {
@@ -1134,9 +1186,10 @@ final class LinkingApp
         foreach (['ttl', 'timeOut', 'interval', 'packetSize', 'mixedPort', 'latencyTimeout'] as $key) {
             if (isset($data[$key])) { $this->$key = (int) $data[$key]; }
         }
-        foreach (['ipLibrary', 'routingMode', 'skippedVersion', 'selectedDns', 'toolType', 'hostInput', 'latencyMethod', 'latencyUrl'] as $key) {
+        foreach (['ipLibrary', 'routingMode', 'skippedVersion', 'selectedDns', 'toolType', 'hostInput', 'latencyMethod', 'latencyUrl', 'appMode'] as $key) {
             if (isset($data[$key]) && is_string($data[$key])) { $this->$key = $data[$key]; }
         }
+        $this->appPackages = array_values(array_filter(is_array($data['appPackages'] ?? null) ? $data['appPackages'] : [], 'is_string'));
         foreach (['tunEnabled', 'ipv6Enabled', 'detailedTraffic'] as $key) {
             if (isset($data[$key])) { $this->$key = (bool) $data[$key]; }
         }
@@ -1164,6 +1217,7 @@ final class LinkingApp
             'mixedPort' => $this->mixedPort, 'ipLibrary' => $this->ipLibrary, 'routingMode' => $this->routingMode,
             'skippedVersion' => $this->skippedVersion, 'selectedDns' => $this->selectedDns, 'toolType' => $this->toolType,
             'hostInput' => $this->hostInput, 'tunEnabled' => $this->tunEnabled, 'ipv6Enabled' => $this->ipv6Enabled, 'detailedTraffic' => $this->detailedTraffic,
+            'appMode' => $this->appMode, 'appPackages' => $this->appPackages,
             'latencyMethod' => $this->latencyMethod, 'latencyUrl' => $this->latencyUrl, 'latencyTimeout' => $this->latencyTimeout,
         ]);
     }

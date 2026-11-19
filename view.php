@@ -214,6 +214,26 @@ $configScreen = fn() => ListView()(
             ),
         ),
         Vpn::available()
+            ? Section(header: 'Per-App Proxy', footer: match ($this->appMode) {
+                'only' => 'Only the selected apps go through the connection; the others go out directly. Takes effect when it connects again.',
+                'except' => 'The selected apps go out directly; all the others go through the connection. Takes effect when it connects again.',
+                default => 'Every app goes through the connection.',
+            })(
+                Picker('Apps', selection: $this->appMode)(
+                    Text('All')->tag('all'),
+                    Text('Only')->tag('only'),
+                    Text('Except')->tag('except'),
+                )->pickerStyle(PickerStyle::segmented),
+                $this->appMode !== 'all'
+                    ? Button(action: fn() => $this->openApps(), label: HStack(spacing: 8)(
+                        Text('Apps')->frame(maxWidth: INF, alignment: Alignment::leading),
+                        Text($this->appsSummary())->foregroundStyle(Color::secondary),
+                        Image(systemName: 'chevron.right')->font(Font::caption)->foregroundStyle(Color::secondary),
+                    ))->buttonStyle(ButtonStyle::plain)
+                    : null,
+            )
+            : null,
+        Vpn::available()
             ? Section(header: 'Routing Data', footer: $this->routingDataMessage !== '' ? $this->routingDataMessage : 'geoip and geosite, for the Rule mode. A connection that is up takes new data when it connects again.')(
                 LabeledContent('geoip / geosite', $this->routingDataStatus()),
                 Button($this->updatingRoutingData ? 'Updating…' : 'Update Now', action: fn() => $this->updateRoutingData(), systemImage: 'arrow.triangle.2.circlepath')->disabled($this->updatingRoutingData),
@@ -396,6 +416,25 @@ $quickSettingsSheet = fn() => NavigationStack()(
         ->navigationBarTitleDisplayMode(TitleDisplayMode::inline),
 )->presentationDetents([PresentationDetent::medium()]);
 
+$appsSheet = fn() => NavigationStack()(
+    ListView()(
+        Section(header: $this->appMode === 'only' ? 'Go through the connection' : 'Go out directly', footer: 'Apps with an icon on the launcher. ' . $this->appsSummary() . '.')(
+            Each($this->matchingApps(), id: 'package')(fn(array $app) => Button(action: fn() => $this->toggleApp($app['package']), label: HStack(alignment: VerticalAlignment::center, spacing: 10)(
+                VStack(alignment: HorizontalAlignment::leading, spacing: 2)(
+                    Text(verbatim: $app['label'])->font(Font::subheadline)->lineLimit(1),
+                    Text(verbatim: $app['package'])->font(Font::caption)->foregroundStyle(Color::secondary)->lineLimit(1),
+                )->frame(maxWidth: INF, alignment: Alignment::leading),
+                Image(systemName: 'checkmark')
+                    ->foregroundStyle($accentBlue)
+                    ->opacity(in_array($app['package'], $this->appPackages, true) ? 1.0 : 0.0),
+            ))->buttonStyle(ButtonStyle::plain)),
+        ),
+    )
+        ->searchable($this->appSearch, prompt: 'Search apps')
+        ->navigationTitle('Apps')
+        ->navigationBarTitleDisplayMode(TitleDisplayMode::inline),
+)->presentationDetents([PresentationDetent::large()]);
+
 $favoritesSheet = fn() => NavigationStack()(
     ListView()(
         Section(header: 'Saved Hosts (' . count($this->favorites) . ')', footer: $this->favorites === [] ? '' : 'Tap to ping. Swipe a row for Tcping, Httping or Delete.')(
@@ -453,7 +492,7 @@ $favoritesSheet = fn() => NavigationStack()(
 // The app
 // ---------------------------------------------------------------------------------------------------------------
 
-return function () use ($networkPage, $pingPage, $configScreenPage, $logsScreenPage, $settingsScreenPage, $proxiesScreen, $addProfileSheet, $quickSettingsSheet, $favoritesSheet, $updateShown, $accentBlue) {
+return function () use ($networkPage, $pingPage, $configScreenPage, $logsScreenPage, $settingsScreenPage, $proxiesScreen, $addProfileSheet, $quickSettingsSheet, $favoritesSheet, $appsSheet, $updateShown, $accentBlue) {
     // A tool's tab is its mode: another tab of one stops what ran in the one before
     $mode = LinkingApp::toolOfTab($this->tab);
     if ($mode !== null && $mode !== $this->toolType) {
@@ -498,6 +537,7 @@ return function () use ($networkPage, $pingPage, $configScreenPage, $logsScreenP
         ->sheet($this->addProfileOpen, content: $addProfileSheet)
         ->sheet($this->quickSettingsOpen, content: $quickSettingsSheet)
         ->sheet($this->favoritesOpen, content: $favoritesSheet)
+        ->sheet($this->appsOpen, content: $appsSheet)
         ->alert('Not available yet', $this->engineAlertOpen, [Button('OK')], $this->engineAlertMessage)
         ->confirmationDialog('Skip version ' . $this->updateVersion . '?', $this->skipUpdateAsked, [
             Button('Skip This Version', action: fn() => $this->skipUpdate()),
