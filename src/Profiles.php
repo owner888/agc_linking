@@ -42,6 +42,8 @@ final class Profiles
         }
         if (ClashSubscription::isClash($text)) { // Clash's YAML: each proxy as the link of its protocol
             $text = implode("\n", ClashSubscription::links($text));
+        } elseif (SingBoxSubscription::isSingBox($text)) { // sing-box's JSON, the same
+            $text = implode("\n", SingBoxSubscription::links($text));
         }
         $nodes = [];
         foreach (preg_split('/\R/', $text) ?: [] as $line) {

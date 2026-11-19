@@ -8,7 +8,7 @@
 
 - **三合一实时网络探测 (`Ping` / `Httping` / `Tcping`)**：支持 ICMP / Socket 连通性探测、HTTP/2 状态码与首包延迟测量、TCP 指定端口握手测速，实时统计 8 项核心指标（`Sent`、`Received`、`Loss`、`Country`、`Min`、`Avg`、`Max`、`Stddev`）。
 - **多 DNS 解析与 IP 归属地库**：内置 `Default DNS`、`114.114.114.114`、`223.5.5.5`、`119.29.29.29`、`8.8.8.8`、`1.1.1.1` 快速切换与一键 `NSLookup` 多 A 记录解析，支持 `IP_2LOCATION` 与 `IP_138` 归属地及 ASN 展示。
-- **智能连接与节点管理 (`Network`)**：支持 `VLESS`（含 Reality）、`VMess`、`Trojan`、`Hysteria2`（含 Salamander 混淆）、`Shadowsocks`，订阅支持链接列表、base64 和 Clash（Mihomo）YAML 三种写法，一键导入、批量延迟测速、分流模式（`Rule` / `Global` / `Direct`）切换与实时上下行速率监控。
+- **智能连接与节点管理 (`Network`)**：支持 `VLESS`（含 Reality）、`VMess`、`Trojan`、`Hysteria2`（含 Salamander 混淆）、`Shadowsocks`，订阅支持链接列表、base64、Clash（Mihomo）YAML 和 sing-box JSON 四种写法，一键导入、批量延迟测速、分流模式（`Rule` / `Global` / `Direct`）切换与实时上下行速率监控。
 - **收藏夹与探测历史 (`Favorites`)**：常用主机与 DNS 节点持久化收藏，支持一键发起 Ping / Tcping / Httping 复测。
 - **全平台自适应导航**：基于 `TabViewStyle::sidebarAdaptable`，在桌面端（macOS / Windows / Linux）与 iPad 横屏自动呈现原生毛玻璃侧边栏，在手机端（iOS / Android）自动呈现底部标签栏。
 

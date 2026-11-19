@@ -3,8 +3,7 @@ declare(strict_types=1);
 
 /**
  * A Clash (Mihomo) subscription: a YAML file whose `proxies:` are maps (type: vless, server: …). Each is turned into
- * the share link of its own protocol (vless://, vmess://, trojan://, ss://, hysteria2://), which is what the rest of
- * the app reads and runs; the rest of the file (groups, rules) is of no use here and is not read. A proxy this cannot
+ * the share link of its own protocol (ShareLink), which is what the rest of the app reads and runs; the rest of the file (groups, rules) is of no use here and is not read. A proxy this cannot
  * run (a plugin of Shadowsocks, TUIC, WireGuard, …) is left out.
  */
 final class ClashSubscription
@@ -57,28 +56,24 @@ final class ClashSubscription
         if ($server === '' || $port <= 0 || $port > 65535) {
             return null;
         }
-        $host = str_contains($server, ':') && !str_starts_with($server, '[') ? "[$server]" : $server; // an IPv6 address
-        $frag = $name !== '' ? '#' . rawurlencode($name) : '';
+        $base = ['name' => $name, 'server' => $server, 'port' => $port];
         switch (strtolower(self::str($p, 'type'))) {
             case 'ss':
                 if (self::str($p, 'plugin') !== '' || self::str($p, 'cipher') === '' || self::str($p, 'password') === '') {
                     return null; // a SIP003 plugin is not run
                 }
-                return 'ss://' . rtrim(base64_encode(self::str($p, 'cipher') . ':' . self::str($p, 'password')), '=') . "@$host:$port$frag";
+                return ShareLink::ss($base + ['method' => self::str($p, 'cipher'), 'password' => self::str($p, 'password')]);
             case 'vmess':
                 if (self::str($p, 'uuid') === '') {
                     return null;
                 }
                 $net = self::str($p, 'network') ?: 'tcp';
                 [$path, $hostHeader, $service] = self::transport($p, $net);
-                $json = array_filter([
-                    'v' => '2', 'ps' => $name, 'add' => $server, 'port' => (string) $port, 'id' => self::str($p, 'uuid'),
-                    'aid' => (string) (int) ($p['alterId'] ?? 0), 'scy' => self::str($p, 'cipher') ?: 'auto', 'net' => $net, 'type' => 'none',
-                    'host' => $hostHeader, 'path' => $net === 'grpc' ? $service : $path,
-                    'tls' => self::flag($p, 'tls') ? 'tls' : '', 'sni' => self::str($p, 'servername'),
-                    'fp' => self::str($p, 'client-fingerprint'), 'alpn' => self::list($p, 'alpn'),
-                ], static fn($v) => $v !== '');
-                return 'vmess://' . base64_encode(json_encode($json, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
+                return ShareLink::vmess($base + [
+                    'uuid' => self::str($p, 'uuid'), 'aid' => (int) ($p['alterId'] ?? 0), 'cipher' => self::str($p, 'cipher'), 'network' => $net,
+                    'tls' => self::flag($p, 'tls'), 'sni' => self::str($p, 'servername'), 'fp' => self::str($p, 'client-fingerprint'),
+                    'alpn' => self::list($p, 'alpn'), 'host' => $hostHeader, 'path' => $net === 'grpc' ? $service : $path,
+                ]);
             case 'vless':
                 if (self::str($p, 'uuid') === '') {
                     return null;
@@ -86,37 +81,34 @@ final class ClashSubscription
                 $net = self::str($p, 'network') ?: 'tcp';
                 [$path, $hostHeader, $service] = self::transport($p, $net);
                 $reality = is_array($p['reality-opts'] ?? null) ? $p['reality-opts'] : [];
-                $security = $reality !== [] ? 'reality' : (self::flag($p, 'tls') ? 'tls' : 'none');
-                return 'vless://' . rawurlencode(self::str($p, 'uuid')) . "@$host:$port?" . self::query([
-                    'type' => $net, 'security' => $security, 'encryption' => self::str($p, 'encryption') ?: 'none',
-                    'flow' => self::str($p, 'flow'), 'sni' => self::str($p, 'servername') ?: self::str($p, 'sni'),
-                    'fp' => self::str($p, 'client-fingerprint'), 'alpn' => self::list($p, 'alpn'),
-                    'pbk' => self::str($reality, 'public-key'), 'sid' => self::str($reality, 'short-id'),
-                    'pinSHA256' => self::str($p, 'fingerprint'),
-                    'path' => $path, 'host' => $hostHeader, 'serviceName' => $service,
-                ]) . $frag;
+                return ShareLink::vless($base + [
+                    'uuid' => self::str($p, 'uuid'), 'network' => $net, 'security' => $reality !== [] ? 'reality' : (self::flag($p, 'tls') ? 'tls' : 'none'),
+                    'flow' => self::str($p, 'flow'), 'encryption' => self::str($p, 'encryption'),
+                    'sni' => self::str($p, 'servername') ?: self::str($p, 'sni'), 'fp' => self::str($p, 'client-fingerprint'), 'alpn' => self::list($p, 'alpn'),
+                    'pbk' => self::str($reality, 'public-key'), 'sid' => self::str($reality, 'short-id'), 'pin' => self::str($p, 'fingerprint'),
+                    'path' => $path, 'host' => $hostHeader, 'service' => $service,
+                ]);
             case 'trojan':
                 if (self::str($p, 'password') === '') {
                     return null;
                 }
                 $net = self::str($p, 'network') ?: 'tcp';
                 [$path, $hostHeader, $service] = self::transport($p, $net);
-                return 'trojan://' . rawurlencode(self::str($p, 'password')) . "@$host:$port?" . self::query([
-                    'type' => $net, 'security' => 'tls', 'sni' => self::str($p, 'sni') ?: self::str($p, 'servername'),
-                    'fp' => self::str($p, 'client-fingerprint'), 'alpn' => self::list($p, 'alpn'),
-                    'pinSHA256' => self::str($p, 'fingerprint'),
-                    'path' => $path, 'host' => $hostHeader, 'serviceName' => $service,
-                ]) . $frag;
+                return ShareLink::trojan($base + [
+                    'password' => self::str($p, 'password'), 'network' => $net, 'sni' => self::str($p, 'sni') ?: self::str($p, 'servername'),
+                    'fp' => self::str($p, 'client-fingerprint'), 'alpn' => self::list($p, 'alpn'), 'pin' => self::str($p, 'fingerprint'),
+                    'path' => $path, 'host' => $hostHeader, 'service' => $service,
+                ]);
             case 'hysteria2':
             case 'hy2':
                 if (self::str($p, 'password') === '') {
                     return null;
                 }
-                return 'hysteria2://' . rawurlencode(self::str($p, 'password')) . "@$host:$port?" . self::query([
-                    'sni' => self::str($p, 'sni') ?: self::str($p, 'servername'),
-                    'pinSHA256' => self::str($p, 'fingerprint'), 'alpn' => self::list($p, 'alpn'),
-                    'obfs' => self::str($p, 'obfs'), 'obfs-password' => self::str($p, 'obfs-password'),
-                ]) . $frag;
+                return ShareLink::hysteria2($base + [
+                    'password' => self::str($p, 'password'), 'sni' => self::str($p, 'sni') ?: self::str($p, 'servername'),
+                    'alpn' => self::list($p, 'alpn'), 'pin' => self::str($p, 'fingerprint'),
+                    'obfs' => self::str($p, 'obfs'), 'obfsPassword' => self::str($p, 'obfs-password'),
+                ]);
             default:
                 return null; // tuic, hysteria (v1), wireguard, ssr, snell, …
         }
@@ -142,18 +134,6 @@ final class ClashSubscription
             return ['', '', self::str($opts, 'grpc-service-name')];
         }
         return ['', '', ''];
-    }
-
-    /** @param array<string, string> $q @return string the query, what is empty left out */
-    private static function query(array $q): string
-    {
-        $parts = [];
-        foreach ($q as $k => $v) {
-            if ($v !== '') {
-                $parts[] = rawurlencode($k) . '=' . rawurlencode($v);
-            }
-        }
-        return implode('&', $parts);
     }
 
     private static function str(array $a, string $key): string

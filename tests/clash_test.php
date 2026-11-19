@@ -3,7 +3,9 @@
 declare(strict_types=1);
 
 require __DIR__ . '/../src/MiniYaml.php';
+require __DIR__ . '/../src/ShareLink.php';
 require __DIR__ . '/../src/ClashSubscription.php';
+require __DIR__ . '/../src/SingBoxSubscription.php';
 require __DIR__ . '/../src/ProxyLink.php';
 require __DIR__ . '/../src/Profiles.php';
 require __DIR__ . '/../src/XrayConfig.php';
